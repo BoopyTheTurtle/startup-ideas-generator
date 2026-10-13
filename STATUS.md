@@ -23,7 +23,7 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 | govuk | built, uncommitted | clean | consultations + CMA cases; source_id per stage done |
 | wordpress | built, uncommitted | gray | 105-plugin pool, 35 per run; plugins API blocked by robots.txt, uses directory REST routes; fixtures local-only |
 | firefox_addons | built, uncommitted | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
-| forums (generic) | not started | per forum | waits for `docs/research/07-seed-forums.md` |
+| forums (generic) | built, no forums approved yet | per forum | RSS/Atom; list in `pipeline/collectors/forums.toml`; per-item licence/tos_class |
 
 **In progress**
 
@@ -35,7 +35,8 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 
 1. ~~Integrate `govuk` source_id per stage~~ done; commit with the rest of 1b.
 2. ~~Integrate `wordpress` and `firefox_addons`~~ done (both gray, fixtures gitignored).
-3. Build the generic forum collector from report 07; Edgar approves the seed set.
+3. ~~Build the generic forum collector~~ done. Fill `forums.toml` from report 07 once
+   the forum agent finishes (it was cut off by a usage limit and resumed); Edgar approves.
 4. Code review of Phase 1b, then commit, push, update this file and `PLAN.md`.
 5. Phase 2: extraction and mapping.
 
@@ -57,6 +58,10 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 ## Log
 
 ### 2026-10-13
+
+- Phase 1b: govuk, wordpress, firefox_addons collectors (wordpress and firefox gray,
+  fixtures local-only); generic forums collector with TOML config; fixed a
+  clock-dependent Stack Exchange test.
 
 - Interviewed Edgar; wrote SPEC.md and PLAN.md; six Stage 0 research reports.
 - Phase 0: skeleton (uv, SQLite WAL, Next.js 16 with `node:sqlite`), public repo

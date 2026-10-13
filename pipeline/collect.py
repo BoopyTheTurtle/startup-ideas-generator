@@ -89,7 +89,7 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
                  item.body, item.lang, item.country,
                  json.dumps(item.metrics, ensure_ascii=False),
                  json.dumps(item.extra, ensure_ascii=False), content_hash(item),
-                 cls.license, cls.tos_class, run_id),
+                 item.license or cls.license, item.tos_class or cls.tos_class, run_id),
             )
             if cur.rowcount:
                 new += 1

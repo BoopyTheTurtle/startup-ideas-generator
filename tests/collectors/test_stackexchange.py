@@ -80,7 +80,7 @@ def question(qid, created=1791300000):
 def test_stops_cleanly_when_quota_low():
     page = {"items": [question(1)], "has_more": False, "quota_remaining": 3}
     http = FakeHttp([page])
-    state = State({})
+    state = State({f"fromdate:{s}": "1791200000" for s in SITES})  # fixed: no clock dependence
     items = list(StackExchange(max_items=30).fetch(http, state))
     assert len(http.calls) == 1 and len(items) == 1
     assert items[0].title == "Can't sync" and items[0].author == "7"

@@ -1,0 +1,14 @@
+# Forums read by pipeline/collectors/forums.py. One [[forum]] table per forum.
+# Only entries with an `approved` date run; restricted ones never run.
+# Vetting notes for each entry live in docs/research/07-seed-forums.md.
+#
+# [[forum]]
+# id = "short-id"                 # stable; part of every item's source_id
+# name = "Human name"
+# feed = "https://.../latest.rss" # RSS 2.0 or Atom
+# lang = "en"                     # ISO 639-1, or omit if mixed
+# country = "GB"                  # ISO 3166-1 alpha-2, or omit if international
+# segment = "trades"              # who posts there
+# license = "Posts (c) their authors"
+# tos_class = "clean"             # clean, gray, restricted
+# approved = "2026-10-13"         # date Edgar approved it; empty = not running

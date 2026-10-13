@@ -37,6 +37,9 @@ class Item:
     country: str | None = None        # ISO 3166-1 alpha-2, or 'EU'
     metrics: dict[str, float] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
+    # Per-item overrides for collectors whose items come from several sites (forums).
+    license: str | None = None
+    tos_class: str | None = None
 
 
 class State:
