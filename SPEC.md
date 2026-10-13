@@ -323,6 +323,9 @@ users, paid data sources.
    review sites replace Trustpilot's role; a forum-discovery loop comes later and feeds
    source cards into stage 8.
 4. **Name:** `startup-ideas-generator`.
+5. **Gray sources** (Stack Exchange, EU Have Your Say) run by default, decided
+   2026-10-13: private analysis only, no training, no republishing of their text.
+6. **Weekly run:** Mondays at 10:00 via Task Scheduler.
 
 ## Discovery costs
 
