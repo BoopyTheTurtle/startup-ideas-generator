@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/evals/heldout/**)",
+      "Edit(/evals/heldout/**)",
+      "Bash(*heldout*)",
+      "PowerShell(*heldout*)"
+    ]
+  }
+}

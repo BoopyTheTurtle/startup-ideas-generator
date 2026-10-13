@@ -71,6 +71,8 @@ when the task needs it, with a `--max-items` cap.
 - Migrations run atomically; never put BEGIN/COMMIT in a migration file.
 - Log metrics with `pipeline.runs.log_metric` for every new stage (SPEC stage 8).
 - A change touches the system or its evaluation, never both.
+- `.claude/settings.json` denies Claude any read, edit, or shell command touching the
+  held-out eval set (any shell command containing that folder's name is refused).
 - Paths contain spaces; quote them in shell commands.
 
 ## Collectors
