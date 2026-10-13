@@ -58,7 +58,7 @@ def cmd_health(args) -> int:
 
 
 # Modules exposing register_cli(subparsers). Add a module here once it exists.
-PLUGINS: list[str] = []
+PLUGINS: list[str] = ["extract", "evals", "embed", "mapping", "curate"]
 
 
 def main(argv: list[str] | None = None) -> int:

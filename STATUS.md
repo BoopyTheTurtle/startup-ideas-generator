@@ -6,7 +6,7 @@ on top. Keep "Current state" accurate; append to "Log".
 
 ## Current state (2026-10-13)
 
-**Phase:** 1b done pending Edgar's answers below. Next: Phase 2 (extract and map).
+**Phase:** 2, Extract and map (in progress).
 
 **Scheduled (Task Scheduler, current user):**
 - `startup-ideas-generator weekly`: Mondays 10:00, `scripts/weekly.ps1` (all collectors
@@ -27,6 +27,19 @@ on top. Keep "Current state" accurate; append to "Log".
 | wordpress | live | gray | 105-plugin pool, 35 per run; plugins API blocked by robots.txt, uses directory REST routes; fixtures local-only |
 | firefox_addons | live | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
 | forums (generic) | live, 9 forums | per forum | 170 items; every feed returned its full window, so weekly runs miss most posts; Futura-Sciences (gray) off |
+
+**In progress (Phase 2)**
+
+- Done: schema (migration 003), `pipeline.llm` (headless `claude -p`, model
+  claude-haiku-5-5), `pipeline.extract` + `scrub` (quotes verified against plain text;
+  no-retain sources keep paraphrases only), extraction wired into both scripts with caps.
+  Futura-Sciences enabled with retain_text = false. Live: 0 quote misses in 77 items;
+  cost ~$0.01 of API-equivalent per item (subscription usage).
+- Agents building in parallel: embeddings + mapping (`pipeline/embed.py`, `mapping.py`)
+  and labeling page `/label` + `pipeline/evals.py`. Their files are uncommitted until
+  reviewed. `pipeline/__main__.py` PLUGINS must list extract, evals, and the mapping
+  modules once they exist; the daily task (09:00) runs from the working tree.
+- Then: integrate, add `map` to weekly.ps1, curator naming, review, commit, demo.
 
 **Next steps**
 
@@ -55,6 +68,15 @@ on top. Keep "Current state" accurate; append to "Log".
 ## Log
 
 ### 2026-10-13
+
+- Stage 3 (map) built: `pipeline/embed.py` (multilingual-e5-small, CPU) and
+  `pipeline/mapping.py`; CLI `embed`, `map`, `problems`, `merge`. Thresholds raised from
+  SPEC's 0.88 / 0.80 to 0.94 assign, 0.93 cluster cohesion, 0.91 merge floor: e5 crowds
+  cosines high, and 0.88 put 260 of 266 real pains into 14 mostly unrelated problems.
+  First live map (runs 11-12): 266 pains, 3 problems, 253 pooled, 3 merge candidates.
+
+- Phase 2 started: schema, extraction via headless Claude Code, extract-and-discard
+  for Futura-Sciences; agents on mapping and on labeling/eval tooling.
 
 - Edgar confirmed the 9 forum seeds and daily forum polling; registered the daily task
   (09:00) and made the weekly run skip forums (`collect --skip`). Futura-Sciences waits

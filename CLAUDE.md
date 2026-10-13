@@ -21,7 +21,9 @@ apply here.
 | `tests/` | pytest suite; runs offline |
 | `web/` | Next.js app (App Router), reads SQLite through `node:sqlite` |
 | `data/ideas.db` | SQLite database, WAL mode, gitignored |
-| `evals/heldout/` | Edgar's held-out eval set, gitignored. Agents never read or edit it. |
+| `evals/working/` | Working eval labels (JSONL), written by the app's /label page |
+| `evals/heldout/` | Edgar's held-out eval set, gitignored. Agents never read or edit it, and never run `eval --set heldout`. |
+| `pipeline/prompts/` | Prompt texts; versioned by hash in the `prompt` table |
 
 ## Commands
 
@@ -34,6 +36,14 @@ uv run python -m pipeline status         # recent runs
 uv run python -m pipeline collect        # all non-restricted collectors (--only NAME ...)
 uv run python -m pipeline health         # collector health
 SIG_HTTP=record uv run pytest tests/collectors/test_NAME.py   # re-record fixtures
+uv run python -m pipeline extract        # stage 2 via headless `claude -p` (--max-items N)
+uv run python -m pipeline scrub          # blank text of no-retain items once extracted
+uv run python -m pipeline map            # stage 3: embed, assign, cluster, snapshot
+uv run python -m pipeline curate         # name new problems (LLM)
+uv run python -m pipeline problems       # top problems
+uv run python -m pipeline merge KEEP DROP --reason TEXT
+uv run python -m pipeline eval-status    # label counts (safe for agents)
+uv run python -m pipeline eval           # working-set scores; --set heldout is Edgar's only
 npm --prefix web run dev                 # app on http://localhost:3000
 npm --prefix web run lint
 ```
@@ -42,7 +52,8 @@ npm --prefix web run lint
 
 ## Rules
 
-- Python owns all writes except steering decisions, which the app writes.
+- Python owns all writes except steering decisions and eval labels, which the app writes.
+- LLM calls go through `pipeline.llm` (a Runtime); never call a model directly.
 - Agents write to the database only through `python -m pipeline` commands, never raw SQL.
 - Every derived row records the run that produced it; LLM-derived rows also record the
   prompt version and model.

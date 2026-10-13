@@ -21,4 +21,9 @@ Step 'collect' { uv run python -m pipeline collect --skip forums }
 # Capped to keep subscription usage modest (~$0.01 of API-equivalent per item); stage 8 tunes it.
 Step 'extract' { uv run python -m pipeline extract --max-items 600 }
 Step 'scrub'   { uv run python -m pipeline scrub }
+# The embedding model is cached after the first run; stay offline so a Hub outage can't
+# stop the weekly run.
+$env:HF_HUB_OFFLINE = '1'
+Step 'map'     { uv run python -m pipeline map }
+Step 'curate'  { uv run python -m pipeline curate }
 Step 'health'  { uv run python -m pipeline health }

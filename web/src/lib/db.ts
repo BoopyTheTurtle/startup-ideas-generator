@@ -11,7 +11,7 @@ const DB_PATH =
 
 let db: DatabaseSync | null = null;
 
-function open(): DatabaseSync | null {
+export function open(): DatabaseSync | null {
   if (db) return db;
   // The DB is a local runtime file, not a build input.
   if (!existsSync(/*turbopackIgnore: true*/ DB_PATH)) return null;
