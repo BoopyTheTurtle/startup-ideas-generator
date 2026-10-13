@@ -8,8 +8,11 @@ on top. Keep "Current state" accurate; append to "Log".
 
 **Phase:** 1b done pending Edgar's answers below. Next: Phase 2 (extract and map).
 
-**Running weekly:** Task Scheduler task `startup-ideas-generator weekly`, Mondays 10:00,
-runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
+**Scheduled (Task Scheduler, current user):**
+- `startup-ideas-generator weekly`: Mondays 10:00, `scripts/weekly.ps1` (all collectors
+  except forums, then health). First run 2026-10-19.
+- `startup-ideas-generator forums daily`: 09:00 daily, `scripts/daily-forums.ps1`. First
+  run 2026-10-14.
 
 **Collectors**
 
@@ -25,17 +28,11 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 | firefox_addons | live | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
 | forums (generic) | live, 9 forums | per forum | 170 items; every feed returned its full window, so weekly runs miss most posts; Futura-Sciences (gray) off |
 
-**Waiting on Edgar**
-
-1. Confirm the 9 forum seeds approved on his behalf (`forums.toml`), incl. Contractor UK
-   now gray (named AI-bot block in robots.txt).
-2. Daily forum polling: add a second scheduled task running `collect --only forums`?
-   Feeds hold 15-20 threads and turn over in hours.
-3. Futura-Sciences (gray; its notice forbids electronic reproduction): enable or skip.
-
 **Next steps**
 
-1. Phase 2: extraction and mapping (SPEC stages 2-3, PLAN Phase 2).
+1. Phase 2: extraction and mapping (SPEC stages 2-3, PLAN Phase 2). Include a per-source
+   `retain_text = false` mode: extract in the same run, store derived fields + URL only,
+   never the post text. Then enable Futura-Sciences with it (Edgar's call, 2026-10-13).
 2. Stage 8 backlog (from reviews): HN volume; Stack Exchange partial runs should use
    `warnings`; GOV.UK per-document isolation; content-hash dedup for identical stage
    bodies; robots `Content-Signal` lines (e.g. ai-train=no) recorded per source.
@@ -58,6 +55,10 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 ## Log
 
 ### 2026-10-13
+
+- Edgar confirmed the 9 forum seeds and daily forum polling; registered the daily task
+  (09:00) and made the weekly run skip forums (`collect --skip`). Futura-Sciences waits
+  for a retain_text=false mode in Phase 2.
 
 - Phase 1b review fixes: `Collector.guarded()` isolates units (forums, plugins, add-ons)
   with per-unit failure streaks; a run where every unit fails is 'failed'; forum bodies

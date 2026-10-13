@@ -171,14 +171,16 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
 
 
 def collect(conn: sqlite3.Connection, only: list[str] | None = None,
-            max_items: int = 500, http_mode: str | None = None) -> list[Result]:
+            max_items: int = 500, http_mode: str | None = None,
+            skip: list[str] | None = None) -> list[Result]:
     available = discover()
-    unknown = set(only or []) - set(available)
+    unknown = (set(only or []) | set(skip or [])) - set(available)
     if unknown:
         raise SystemExit(f"unknown collectors: {sorted(unknown)}; have {sorted(available)}")
     # Restricted sources (terms or robots.txt forbid collection) run only when named.
     chosen = {k: v for k, v in available.items()
-              if (k in only if only else v.tos_class != "restricted")}
+              if (k in only if only else v.tos_class != "restricted")
+              and k not in (skip or [])}
     results = []
     with runs.run(conn, "collect", note=",".join(chosen)) as run_id:
         for cls in chosen.values():

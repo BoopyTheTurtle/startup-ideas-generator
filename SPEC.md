@@ -325,7 +325,11 @@ users, paid data sources.
 4. **Name:** `startup-ideas-generator`.
 5. **Gray sources** (Stack Exchange, EU Have Your Say) run by default, decided
    2026-10-13: private analysis only, no training, no republishing of their text.
-6. **Weekly run:** Mondays at 10:00 via Task Scheduler.
+6. **Weekly run:** Mondays at 10:00 via Task Scheduler; forums poll daily at 09:00,
+   because their feeds turn over within hours. The 9 seed forums are confirmed.
+7. **Sources whose terms forbid reproduction** (e.g. Futura-Sciences) may run with
+   `retain_text = false`: extraction runs in the same pass and only derived fields plus
+   the URL are stored. Their evidence counts as paraphrase, weaker than a verbatim quote.
 
 ## Discovery costs
 

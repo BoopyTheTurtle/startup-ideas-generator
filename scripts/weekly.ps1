@@ -16,5 +16,6 @@ function Step($name, [scriptblock]$body) {
     "=== $name exit $LASTEXITCODE" | Out-File -Append -Encoding utf8 $log
 }
 
-Step 'collect' { uv run python -m pipeline collect }
+# Forums poll daily (scripts/daily-forums.ps1); skipping them here avoids two runs at once.
+Step 'collect' { uv run python -m pipeline collect --skip forums }
 Step 'health'  { uv run python -m pipeline health }

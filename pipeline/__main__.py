@@ -38,7 +38,7 @@ def cmd_collect(args) -> int:
     from pipeline.collect import collect
     conn = db.connect()
     db.migrate(conn)
-    results = collect(conn, only=args.only, max_items=args.max_items)
+    results = collect(conn, only=args.only, skip=args.skip, max_items=args.max_items)
     for r in results:
         line = f"{r.source:<16} {r.status:<13} fetched {r.fetched:>5}  new {r.new:>5}"
         print(line + (f"  {r.error.splitlines()[0]}" if r.error else ""))
@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="list recent runs").set_defaults(fn=cmd_status)
     c = sub.add_parser("collect", help="run stream collectors")
     c.add_argument("--only", nargs="+", metavar="NAME", help="run only these collectors")
+    c.add_argument("--skip", nargs="+", metavar="NAME", default=[],
+                   help="leave out these collectors (e.g. forums, which polls daily)")
     c.add_argument("--max-items", type=int, default=500, help="cap per collector per run")
     c.set_defaults(fn=cmd_collect)
     sub.add_parser("health", help="collector health").set_defaults(fn=cmd_health)
