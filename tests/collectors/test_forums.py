@@ -161,3 +161,10 @@ def test_atom_ids_and_links_lose_phpbb_sids():
         "https://x.example/threads/1", "https://l.de/viewtopic.php?t=1&amp;p=2&amp;sid=abc123#p2")
     [e] = parse_feed(atom, "t")
     assert e.guid == e.link == "https://l.de/viewtopic.php?t=1&p=2#p2"
+
+
+def test_retain_text_flag_reaches_items():
+    nr = Forum(**{**FORUM.__dict__, "retain_text": False})
+    feed = rss(it("1", "Mon, 12 Oct 2026 09:00:00 +0000"))
+    [item] = Forums(forums=[nr]).fetch(FakeHttp({nr.feed: feed}), State({}))
+    assert item.retain_text is False

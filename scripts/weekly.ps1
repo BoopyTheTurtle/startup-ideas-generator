@@ -18,4 +18,7 @@ function Step($name, [scriptblock]$body) {
 
 # Forums poll daily (scripts/daily-forums.ps1); skipping them here avoids two runs at once.
 Step 'collect' { uv run python -m pipeline collect --skip forums }
+# Capped to keep subscription usage modest (~$0.01 of API-equivalent per item); stage 8 tunes it.
+Step 'extract' { uv run python -m pipeline extract --max-items 600 }
+Step 'scrub'   { uv run python -m pipeline scrub }
 Step 'health'  { uv run python -m pipeline health }

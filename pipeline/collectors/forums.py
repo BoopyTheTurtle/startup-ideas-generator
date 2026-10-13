@@ -61,6 +61,7 @@ class Forum:
     tos_class: str
     approved: str | None
     order: str = "active"   # 'active': feed sorted by last post, dates = last activity; 'new'
+    retain_text: bool = True  # False: body blanked after extraction (SPEC decision 7)
 
 
 def load_forums(path: Path = CONFIG) -> list[Forum]:
@@ -77,7 +78,7 @@ def load_forums(path: Path = CONFIG) -> list[Forum]:
             raise ValueError(f"forums.toml: {f['id']}: order must be 'active' or 'new'")
         forums.append(Forum(f["id"], f["name"], f["feed"], f.get("lang"), f.get("country"),
                             f["segment"], f["license"], f["tos_class"], f.get("approved") or None,
-                            order))
+                            order, bool(f.get("retain_text", True))))
     ids = [f.id for f in forums]
     if len(ids) != len(set(ids)):
         raise ValueError("forums.toml: duplicate ids")
@@ -230,4 +231,5 @@ class Forums(Collector):
                        "feed_window": len(entries), "window_all_new": len(fresh) == len(entries)},
                 license=forum.license,
                 tos_class=forum.tos_class,
+                retain_text=forum.retain_text,
             )

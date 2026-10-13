@@ -12,6 +12,7 @@
 # license = "Posts (c) their authors"
 # tos_class = "clean"             # clean, gray, restricted
 # order = "active"                # "active": sorted by last post (XenForo, WoltLab); "new": new threads
+# retain_text = false             # optional: keep no post text, only extracted fields + URL
 # approved = "2026-10-13"         # date Edgar approved it; empty = not running
 
 # Seed set from docs/research/07-seed-forums.md (vetted 2026-10-13). Edgar delegated the
@@ -129,4 +130,5 @@ country = "FR"
 segment = "home owners (heating, appliances)"
 license = "Legal notice forbids electronic reproduction"
 tos_class = "gray"
-approved = ""   # off until Phase 2 adds retain_text = false (store derived fields only)
+retain_text = false       # its notice forbids electronic reproduction: extract, then discard text
+approved = "2026-10-13"   # Edgar: run it if we store derived data only
