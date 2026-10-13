@@ -30,16 +30,17 @@ on top. Keep "Current state" accurate; append to "Log".
 
 **In progress (Phase 2)**
 
-- Done: schema (migration 003), `pipeline.llm` (headless `claude -p`, model
-  claude-haiku-5-5), `pipeline.extract` + `scrub` (quotes verified against plain text;
-  no-retain sources keep paraphrases only), extraction wired into both scripts with caps.
-  Futura-Sciences enabled with retain_text = false. Live: 0 quote misses in 77 items;
-  cost ~$0.01 of API-equivalent per item (subscription usage).
-- Agents building in parallel: embeddings + mapping (`pipeline/embed.py`, `mapping.py`)
-  and labeling page `/label` + `pipeline/evals.py`. Their files are uncommitted until
-  reviewed. `pipeline/__main__.py` PLUGINS must list extract, evals, and the mapping
-  modules once they exist; the daily task (09:00) runs from the working tree.
-- Then: integrate, add `map` to weekly.ps1, curator naming, review, commit, demo.
+- Built and committed: extraction (`pipeline.extract`, headless `claude -p`,
+  claude-haiku-5-5), extract-and-discard (Futura-Sciences), mapping (`pipeline.embed`,
+  `pipeline.mapping`; multilingual-e5-small; thresholds 0.94 assign / 0.91 merge after e5
+  compressed similarities), curator naming (`pipeline.curate`, claude-sonnet-5-5),
+  /label page + `eval` commands. Weekly script: collect, extract (600), scrub, map, curate.
+- Live: 1,600 raw items; 380 extracted (1 quote miss); 266 pains; 3 problems (all
+  Firefox add-on complaints; problem 1 flagged incoherent by the curator).
+- Running: Phase 2 code review. Apply findings, then demo.
+- Waiting on Edgar: label ~200 working + ~100 held-out items at /label; decide on a looser
+  "themes" layer (topic clusters recomputed each run, for the broad radar), and on a
+  `.claude/settings.json` deny rule protecting evals/heldout/.
 
 **Next steps**
 
@@ -68,6 +69,10 @@ on top. Keep "Current state" accurate; append to "Log".
 ## Log
 
 ### 2026-10-13
+
+- Phase 2: mapping, curator, /label, eval commands built and committed (70c3fd4).
+  Experiment: mean-centred e5 vectors form topic neighbourhoods, not same-problem groups;
+  basis for a proposed themes layer.
 
 - Stage 3 (map) built: `pipeline/embed.py` (multilingual-e5-small, CPU) and
   `pipeline/mapping.py`; CLI `embed`, `map`, `problems`, `merge`. Thresholds raised from
