@@ -71,6 +71,10 @@ template; a reviewer checks each against the source's terms.
 
 ## Phase 3 — Steering UI
 
+- Themes layer first: loose topic clusters (mean-centred embeddings) recomputed each
+  run, named by the curator, shown as the radar's broad entry point; never stored as
+  problems.
+
 - Radar with sparklines, filters, and collector health banner.
 - Problem detail: statement, quotes with links, snapshot chart, actions with reason codes.
 - Merge queue, runs and cost page.

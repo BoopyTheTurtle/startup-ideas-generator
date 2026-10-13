@@ -41,8 +41,12 @@ on top. Keep "Current state" accurate; append to "Log".
   The extract prompt is now 5f6ac038f30e (untrusted-data rule); new items use it,
   old ones keep theirs unless `extract --reextract`.
 - Waiting on Edgar: label ~200 working + ~100 held-out items at /label (needed for the
-  Phase 2 eval demo); decide on a "themes" layer (loose topic clusters per run for the
-  broad radar); decide on a `.claude/settings.json` deny rule for evals/heldout/.
+  Phase 2 eval demo); decide on a `.claude/settings.json` deny rule for evals/heldout/.
+- Edgar, labeling: "mostly noise, will have to re-evaluate sources". Once labels exist,
+  run `eval-status` and `eval --prompt-version 0c6c40f4e6c5` for per-source pain rates
+  and precision, and bring a source review (keep / narrow / drop) to Edgar.
+- Decided: Phase 3 starts with a themes layer (loose topic clusters recomputed each run,
+  never stored as problems) as the radar's broad entry point.
 
 **Next steps**
 
