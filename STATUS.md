@@ -20,24 +20,21 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 | uk_petitions | live | clean | open + rejected petitions |
 | eu_haveyoursay | live | gray | undocumented API; fixtures local-only |
 | appstore | built, off | restricted | robots.txt and Apple terms forbid it; runs only with `--only` |
-| govuk | built, uncommitted | clean | consultations + CMA cases; integrate next (see below) |
-| wordpress | in progress | ? | plugin support feeds |
-| firefox_addons | in progress | ? | AMO ratings ≤ 3 stars |
+| govuk | built, uncommitted | clean | consultations + CMA cases; source_id per stage done |
+| wordpress | built, uncommitted | gray | 105-plugin pool, 35 per run; plugins API blocked by robots.txt, uses directory REST routes; fixtures local-only |
+| firefox_addons | built, uncommitted | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
 | forums (generic) | not started | per forum | waits for `docs/research/07-seed-forums.md` |
 
 **In progress**
 
-- Collector agents building `wordpress` and `firefox_addons`; a research agent vetting
-  seed forums into `docs/research/07-seed-forums.md`. If those files are missing or
+- A research agent vetting seed forums into `docs/research/07-seed-forums.md`. If those files are missing or
   incomplete, redo the work from the briefs implied by SPEC stage 1 and CLAUDE.md
   "Collectors".
 
 **Next steps**
 
-1. Integrate `govuk`: change `source_id` to `<content_id>:<document_type>` so each
-   consultation stage (open, closed, outcome) is stored; re-record its fixtures; review.
-2. Integrate `wordpress` and `firefox_addons`; gitignore fixtures if their terms are not
-   clean.
+1. ~~Integrate `govuk` source_id per stage~~ done; commit with the rest of 1b.
+2. ~~Integrate `wordpress` and `firefox_addons`~~ done (both gray, fixtures gitignored).
 3. Build the generic forum collector from report 07; Edgar approves the seed set.
 4. Code review of Phase 1b, then commit, push, update this file and `PLAN.md`.
 5. Phase 2: extraction and mapping.

@@ -7,6 +7,10 @@ evals/heldout/
 tests/fixtures/appstore/
 # Have Your Say feedback belongs to its submitters; keep recordings local too.
 tests/fixtures/eu_haveyoursay/
+# AMO ratings are licensed to Mozilla only.
+tests/fixtures/firefox_addons/
+# WordPress.org forum posts belong to their authors.
+tests/fixtures/wordpress/
 
 # Secrets
 .env
