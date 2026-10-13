@@ -34,6 +34,28 @@ def cmd_status(args) -> int:
     return 0
 
 
+def cmd_collect(args) -> int:
+    from pipeline.collect import collect
+    conn = db.connect()
+    db.migrate(conn)
+    results = collect(conn, only=args.only, max_items=args.max_items)
+    for r in results:
+        line = f"{r.source:<16} {r.status:<13} fetched {r.fetched:>5}  new {r.new:>5}"
+        print(line + (f"  {r.error.splitlines()[0]}" if r.error else ""))
+    return 0 if all(r.status == "ok" for r in results) else 1
+
+
+def cmd_health(args) -> int:
+    conn = db.connect()
+    db.migrate(conn)
+    rows = conn.execute("SELECT * FROM collector_health ORDER BY source").fetchall()
+    for r in rows:
+        print(f"{r['source']:<16} {r['last_status'] or '-':<13} "
+              f"last ok {r['last_success_at'] or 'never':<25} "
+              f"fails {r['consecutive_failures']}  items {r['items_last_run']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="pipeline")
     sub = p.add_subparsers(dest="command", required=True)
@@ -43,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--note")
     s.set_defaults(fn=cmd_smoke)
     sub.add_parser("status", help="list recent runs").set_defaults(fn=cmd_status)
+    c = sub.add_parser("collect", help="run stream collectors")
+    c.add_argument("--only", nargs="+", metavar="NAME", help="run only these collectors")
+    c.add_argument("--max-items", type=int, default=500, help="cap per collector per run")
+    c.set_defaults(fn=cmd_collect)
+    sub.add_parser("health", help="collector health").set_defaults(fn=cmd_health)
     args = p.parse_args(argv)
     return args.fn(args)
 
