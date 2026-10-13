@@ -67,14 +67,16 @@ on demand when an agent investigates a candidate, and cache by query.
 |---|---|---|---|
 | v1 | Global | Hacker News (Algolia), Stack Exchange, WordPress.org plugin support feeds, Firefox Add-ons reviews | — |
 | v1 | US, EEA, UK | Apple App Store reviews, looped over storefronts | — |
-| v1 | US | CFPB complaints | — |
 | v1 | UK | UK Parliament petitions, GOV.UK consultations and CMA cases | — |
 | v1 | EEA | EU Have Your Say feedback (24 languages) | — |
 | v1 | Any | Generic forum collector (Discourse and XenForo RSS), seeded with 5–10 forums Edgar approves | — |
 | v2 | Global | Bluesky, GitHub issues, Atlassian, Steam, JetBrains, and VS Code marketplace reviews | Google Trends, SEC EDGAR Form D |
-| v2 | US | openFDA, NHTSA, Federal Register | FRED |
+| v2 | US | openFDA, NHTSA, Federal Register | FRED, CFPB complaint counts |
 | v2 | UK, EEA | UK Financial Ombudsman decisions, UK written questions, EU Safety Gate, TED and Find a Tender, Adzuna | Eurostat, ONS, ECB, FCA complaint data, Companies House |
 | Later | Any | Reddit (if research access is granted), forums found by discovery, sector sources Edgar picks | DataForSEO (~$50 deposit), UN Comtrade |
+
+CFPB complaint narratives left the v1 set: the CFPB stopped publishing them in August
+2026 (ccdb5-api PR #256), so only structured counts remain, which suit a lookup.
 
 Excluded: X (paid per read), Amazon, G2, Trustpilot, Google Play, Capterra, Glassdoor,
 and kununu reviews (paid, closed, or scraping against terms); Mumsnet (terms forbid

@@ -4,7 +4,10 @@ API: https://hn.algolia.com/api (no key; documented limit 10,000 requests/hour p
 Content: user posts on news.ycombinator.com; HN's API terms allow reuse with attribution.
 
 HN carries ~10k comments a day, nearly all off-topic for us, so the collector asks Algolia
-for phrases people use when describing a problem, and pages forward from a cursor.
+for phrases people use when describing a problem, newest first, from a shared cursor.
+Each query gets max_items // len(PAIN_QUERIES) items; when a query has more new hits than
+that, the older ones are skipped for good. That is deliberate sampling, as in
+stackexchange and appstore.
 """
 
 from collections.abc import Iterator

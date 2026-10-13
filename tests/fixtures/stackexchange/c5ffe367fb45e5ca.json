@@ -1,0 +1,16 @@
+{
+ "method": "GET",
+ "url": "https://api.stackexchange.com/2.3/questions?site=superuser&fromdate=1791244800&sort=creation&order=desc&filter=withbody&pagesize=2&page=1",
+ "params": {
+  "site": "superuser",
+  "fromdate": 1791244800,
+  "sort": "creation",
+  "order": "desc",
+  "filter": "withbody",
+  "pagesize": 2,
+  "page": 1
+ },
+ "status": 200,
+ "content_type": "application/json; charset=utf-8",
+ "text": "{\"items\":[{\"tags\":[\"google-chrome\",\"password-management\"],\"owner\":{\"account_id\":942854,\"reputation\":715,\"user_id\":99602,\"user_type\":\"registered\",\"profile_image\":\"https://www.gravatar.com/avatar/cb96169403450ab7cc3cb7994ed4283f?s=256&d=identicon&r=PG\",\"display_name\":\"Qwerty\",\"link\":\"https://superuser.com/users/99602/qwerty\"},\"is_answered\":false,\"view_count\":7,\"answer_count\":1,\"score\":0,\"last_activity_date\":1791895226,\"creation_date\":1791894560,\"question_id\":1940924,\"content_license\":\"CC BY-SA 4.0\",\"link\":\"https://superuser.com/questions/1940924/how-to-migrate-autofill-credentials-to-a-rebranded-domain-in-google-chromes-pas\",\"title\":\"How to migrate autofill credentials to a rebranded domain in Google Chrome&#39;s password manager?\",\"body\":\"<p>A service provider recently changed their brand name and migrated to a completely new domain. Because of this URL change, Google Chrome will no longer recognize the login forms, and autocomplete has stopped working.</p>\\n<p>Is there a way to easily update several password entries to this new domain?</p>\\n<p>It doesn't seem to be possible from the PM itself</p>\\n<p><img src=\\\"https://i.sstatic.net/JpEIq352.png\\\" alt=\\\"Edit password dialog in chrome password manager displaying the lack of edit site address option.\\\" /></p>\\n\"},{\"tags\":[\"email\"],\"owner\":{\"account_id\":47197963,\"reputation\":9,\"user_id\":3395274,\"user_type\":\"registered\",\"profile_image\":\"https://i.sstatic.net/7A1pfDne.jpg?s=256\",\"display_name\":\"Alex Morgan\",\"link\":\"https://superuser.com/users/3395274/alex-morgan\"},\"is_answered\":false,\"view_count\":14,\"answer_count\":1,\"score\":0,\"last_activity_date\":1791894876,\"creation_date\":1791893686,\"question_id\":1940923,\"content_license\":\"CC BY-SA 4.0\",\"link\":\"https://superuser.com/questions/1940923/what-is-the-best-way-to-back-up-office-365-emails\",\"title\":\"What is the best way to back up Office 365 emails?\",\"body\":\"<p>You can use Outlook’s export feature to save emails to a PST file or choose a dedicated backup solution for regular backups. The best method depends on your mailbox size, backup needs, and whether you need to protect shared mailboxes or multiple users’ data.</p>\\n\"}],\"has_more\":true,\"quota_max\":300,\"quota_remaining\":296}"
+}

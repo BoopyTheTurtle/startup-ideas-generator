@@ -3,6 +3,10 @@
 Stage 0 research. Status checked by web search on 2026-10-13. Items marked **[unverified]**
 come from memory or a single secondary source and need a check before we build a collector.
 
+> **Update 2026-10-13:** the CFPB stopped publishing complaint narratives on
+> 2026-08-14 and removed them from the API and bulk file (cfpb/ccdb5-api PR #256). Only
+> structured fields remain, so CFPB moves from the v1 stream set to a v2 lookup.
+
 ## Summary
 
 The sources that point most directly at a *problem* are places where people complain in

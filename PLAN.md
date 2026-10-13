@@ -26,10 +26,21 @@ appeared on refresh.
 - Collector base class: fetch, normalize to `raw_item`, record health, check robots.txt,
   tag licence, country, and language.
 - Phase 1a streams: Hacker News, Stack Exchange, App Store reviews (US, EEA, UK
-  storefronts), CFPB, UK Parliament petitions, EU Have Your Say.
+  storefronts), UK Parliament petitions, EU Have Your Say. CFPB dropped: narratives
+  unpublished since August 2026.
 - Phase 1b streams: GOV.UK consultations and CMA cases, WordPress.org support feeds,
   Firefox Add-ons reviews, and the generic forum collector with Edgar's 5–10 seed forums.
 - Schema checks for undocumented APIs.
+
+**Phase 1a shipped 2026-10-13.** Collectors: hn, stackexchange (gray: AI-use clause in
+Stack Exchange's acceptable-use policy), uk_petitions, eu_haveyoursay (gray: submitters
+hold rights to feedback text), appstore (restricted: robots.txt and Apple's terms forbid
+it; built but skipped by default). CFPB dropped. First harvest: 479 items from four
+sources in under two minutes. A code review led to an RFC 9309 robots matcher, robots
+checks on every live URL, capped Retry-After, batched commits, and cursor fixes.
+Known gaps for stage 8: HN pain phrases find only ~44 items a week; partial Stack Exchange
+runs (quota stops) report ok; timestamp-only cursors can drop ties at a budget cut;
+hot EU initiatives get sampled, not read in full.
 - Recorded fixtures per collector, so tests run offline.
 - `python -m pipeline collect` and a Task Scheduler entry for weekly runs.
 - Source metrics: uptime, items, distinct authors, region, language.
@@ -100,7 +111,7 @@ Ordered by value, each item separately approved:
 - v2 streams, US: openFDA, NHTSA, Federal Register.
 - v2 streams, UK and EEA: Financial Ombudsman decisions, written questions, Safety Gate,
   TED and Find a Tender, Adzuna.
-- Lookups: Google Trends, FRED, EDGAR Form D, Eurostat, ONS, ECB, Companies House.
+- Lookups: CFPB complaint counts, Google Trends, FRED, EDGAR Form D, Eurostat, ONS, ECB, Companies House.
 - Source proposals after promotion; `/add-source` skill.
 - Forum discovery, feeding source cards into the weekly loop.
 - Move extraction to the API batch endpoint if volume demands.

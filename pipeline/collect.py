@@ -13,9 +13,10 @@ from pipeline import runs
 from pipeline.collectors import discover
 from pipeline.collectors.base import Collector, Item, SchemaDrift, State
 from pipeline.db import db_path
-from pipeline.http import Http, RobotsDisallowed
+from pipeline.http import Http, RateLimited, RobotsDisallowed
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+COMMIT_EVERY = 50
 
 
 def _salt() -> bytes:
@@ -73,6 +74,9 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
     by_lang: Counter[str] = Counter()
     status, error = "ok", None
     try:
+        # Drain the generator: collectors may save cursors after their loop. Items past
+        # max_items are still stored, since their cursor has already moved past them;
+        # the over-cap metric flags the collector bug instead.
         for item in collector.fetch(http, state):
             fetched += 1
             ah = author_hash(salt, src, item.author)
@@ -93,13 +97,15 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
                     authors.add(ah)
                 by_country[item.country or "unknown"] += 1
                 by_lang[item.lang or "unknown"] += 1
-            if fetched >= max_items:
-                break
+            if fetched % COMMIT_EVERY == 0:
+                conn.commit()  # short write transactions: the app may write meanwhile
         conn.commit()
     except SchemaDrift as e:
         status, error = "schema_drift", str(e)
     except RobotsDisallowed as e:
         status, error = "blocked", str(e)
+    except RateLimited as e:
+        status, error = "rate_limited", str(e)
     except Exception as e:  # noqa: BLE001 — one broken source must not stop the others
         status, error = "failed", f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=3)}"
     finally:
@@ -135,6 +141,8 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
         log("items_new_by_country", n, f"{src}:{country}", "coverage")
     for lang, n in by_lang.items():
         log("items_new_by_lang", n, f"{src}:{lang}", "coverage")
+    if fetched > max_items:
+        log("items_over_cap", fetched - max_items)
     return Result(src, status, fetched, new, error)
 
 
@@ -144,7 +152,9 @@ def collect(conn: sqlite3.Connection, only: list[str] | None = None,
     unknown = set(only or []) - set(available)
     if unknown:
         raise SystemExit(f"unknown collectors: {sorted(unknown)}; have {sorted(available)}")
-    chosen = {k: v for k, v in available.items() if not only or k in only}
+    # Restricted sources (terms or robots.txt forbid collection) run only when named.
+    chosen = {k: v for k, v in available.items()
+              if (k in only if only else v.tos_class != "restricted")}
     results = []
     with runs.run(conn, "collect", note=",".join(chosen)) as run_id:
         for cls in chosen.values():

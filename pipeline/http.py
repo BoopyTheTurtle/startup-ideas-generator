@@ -12,16 +12,17 @@ import hashlib
 import json
 import os
 import time
-import urllib.robotparser
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+from pipeline import robots
 from pipeline.db import ROOT
 
+PRODUCT = "startup-ideas-generator"
 USER_AGENT = (
-    "startup-ideas-generator/0.1 "
+    f"{PRODUCT}/0.1 "
     "(+https://github.com/BoopyTheTurtle/startup-ideas-generator)"
 )
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -33,6 +34,13 @@ class FixtureMissing(RuntimeError):
 
 class RobotsDisallowed(RuntimeError):
     pass
+
+
+class RateLimited(RuntimeError):
+    """The source asked us to wait longer than one run can afford."""
+
+
+MAX_RETRY_AFTER_S = 120
 
 
 class Response:
@@ -70,7 +78,7 @@ class Http:
         self.mode = mode or os.environ.get("SIG_HTTP", "live")
         self.dir = fixtures / collector
         self._last = 0.0
-        self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
+        self._robots: dict[str, list[robots.Group] | None] = {}
         self._client = None if self.mode == "replay" else httpx.Client(
             headers={"User-Agent": USER_AGENT}, timeout=30, follow_redirects=True)
 
@@ -96,6 +104,8 @@ class Http:
             d = json.loads(path.read_text(encoding="utf-8"))
             return Response(d["url"], d["status"], d["content_type"], d["text"])
 
+        # Every live URL is checked; robots.txt is fetched once per origin per run.
+        self.check_robots(str(httpx.URL(url, params=params)))
         resp = self._send(method, url, params, json_body, headers)
         if self.mode == "record":
             self.dir.mkdir(parents=True, exist_ok=True)
@@ -121,7 +131,10 @@ class Http:
                 continue
             if r.status_code in (429, 500, 502, 503, 504) and attempt < 3:
                 retry_after = r.headers.get("retry-after", "")
-                time.sleep(int(retry_after) if retry_after.isdigit() else 2 ** attempt * 2)
+                wait_s = int(retry_after) if retry_after.isdigit() else 2 ** attempt * 2
+                if wait_s > MAX_RETRY_AFTER_S:
+                    raise RateLimited(f"{url}: Retry-After {wait_s}s exceeds {MAX_RETRY_AFTER_S}s")
+                time.sleep(wait_s)
                 continue
             return Response(str(r.url), r.status_code,
                             r.headers.get("content-type", ""), r.text)
@@ -133,11 +146,21 @@ class Http:
             return
         origin = httpx.URL(url).copy_with(path="/", query=None, fragment=None)
         base = str(origin).rstrip("/")
-        rp = self._robots.get(base)
-        if rp is None:
-            rp = urllib.robotparser.RobotFileParser()
-            r = self._client.get(base + "/robots.txt")
-            rp.parse(r.text.splitlines() if r.status_code == 200 else [])
-            self._robots[base] = rp
-        if not rp.can_fetch(USER_AGENT, url):
+        if base not in self._robots:
+            # RFC 9309: 4xx means no restrictions; 5xx or unreachable means full disallow.
+            # _send retries transient failures first, so one blip doesn't block a week.
+            try:
+                r = self._send("GET", base + "/robots.txt", None, None, None)
+                if r.status_code >= 500 or r.status_code == 429:
+                    self._robots[base] = None
+                elif r.status_code >= 400:
+                    self._robots[base] = []
+                else:
+                    self._robots[base] = robots.parse(r.text)
+            except (httpx.TransportError, RateLimited):
+                self._robots[base] = None
+        groups = self._robots[base]
+        if groups is None:
+            raise RobotsDisallowed(f"robots.txt at {base} unreachable; treating as disallowed")
+        if not robots.allowed(groups, PRODUCT, url):
             raise RobotsDisallowed(f"robots.txt at {base} disallows {url}")

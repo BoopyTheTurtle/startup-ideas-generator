@@ -44,6 +44,37 @@ export async function recentRuns(limit = 20): Promise<Run[] | null> {
     .all(limit) as Run[];
 }
 
+export type Health = {
+  source: string;
+  last_status: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  items_last_run: number;
+  total_items: number;
+  stale: number; // 1 when the last success is older than STALE_DAYS, or never happened
+};
+
+export const STALE_DAYS = 8;
+
+export async function collectorHealth(): Promise<Health[] | null> {
+  await connection();
+  const conn = open();
+  if (!conn) return null;
+  const hasTable = conn
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'collector_health'")
+    .get();
+  if (!hasTable) return [];
+  return conn
+    .prepare(
+      `SELECT h.*,
+              (SELECT COUNT(*) FROM raw_item r WHERE r.source = h.source) AS total_items,
+              COALESCE(julianday('now') - julianday(h.last_success_at) > ?, 1) AS stale
+         FROM collector_health h ORDER BY h.source`,
+    )
+    .all(STALE_DAYS) as Health[];
+}
+
 export function dbPath(): string {
   return DB_PATH;
 }

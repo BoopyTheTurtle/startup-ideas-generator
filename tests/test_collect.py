@@ -89,9 +89,15 @@ def test_failures_count_up_then_reset(conn):
     assert h[0] == 0 and h[1]
 
 
-def test_max_items_caps_run(conn):
+def test_over_cap_items_are_stored_and_flagged(conn):
     Fake.items, Fake.fail_after = items(10), None
-    assert run(conn, Fake, max_items=4).fetched == 4
+    assert run(conn, Fake, max_items=4).fetched == 10
+    assert conn.execute("SELECT COUNT(*) FROM raw_item").fetchone()[0] == 10
+    assert conn.execute(
+        "SELECT value FROM collector_state WHERE key='cursor'").fetchone()[0] == "10"
+    assert conn.execute(
+        "SELECT value FROM metric WHERE name='items_over_cap'").fetchone()[0] == 6
+
 
 
 def test_logs_source_and_coverage_metrics(conn):

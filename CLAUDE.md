@@ -27,6 +27,9 @@ uv run pytest -q                         # Python tests
 uv run python -m pipeline migrate        # apply migrations
 uv run python -m pipeline smoke          # write a test run + metric
 uv run python -m pipeline status         # recent runs
+uv run python -m pipeline collect        # all non-restricted collectors (--only NAME ...)
+uv run python -m pipeline health         # collector health
+SIG_HTTP=record uv run pytest tests/collectors/test_NAME.py   # re-record fixtures
 npm --prefix web run dev                 # app on http://localhost:3000
 npm --prefix web run lint
 ```
@@ -42,3 +45,15 @@ npm --prefix web run lint
 - Log metrics with `pipeline.runs.log_metric` for every new stage (SPEC stage 8).
 - A change touches the system or its evaluation, never both.
 - Paths contain spaces; quote them in shell commands.
+
+## Collectors
+
+- One module per source in `pipeline/collectors/`, discovered automatically. Copy
+  `hn.py` and `tests/collectors/test_hn.py`.
+- Honor `max_items`; save cursors in `State` before yielding where possible.
+- Never store or read personal names: `author` is hashed by the runner; citizens get None.
+- Call `require()` on every response and item; undocumented APIs must fail loudly.
+- Set `tos_class` honestly. `restricted` sources run only with `--only`. `Http` checks
+  robots.txt (RFC 9309, `pipeline/robots.py`) for every live URL.
+- Replay tests use fixed cursors. Fixtures go in `tests/fixtures/<name>/`; gitignore them
+  when the source's terms forbid republishing (appstore, eu_haveyoursay).

@@ -3,6 +3,11 @@
 data/
 evals/heldout/
 
+# Apple's terms forbid republishing; App Store fixtures stay local.
+tests/fixtures/appstore/
+# Have Your Say feedback belongs to its submitters; keep recordings local too.
+tests/fixtures/eu_haveyoursay/
+
 # Secrets
 .env
 .env.*

@@ -1,0 +1,16 @@
+{
+ "method": "GET",
+ "url": "https://api.stackexchange.com/2.3/questions?site=expatriates&fromdate=1791244800&sort=creation&order=desc&filter=withbody&pagesize=2&page=1",
+ "params": {
+  "site": "expatriates",
+  "fromdate": 1791244800,
+  "sort": "creation",
+  "order": "desc",
+  "filter": "withbody",
+  "pagesize": 2,
+  "page": 1
+ },
+ "status": 200,
+ "content_type": "application/json; charset=utf-8",
+ "text": "{\"items\":[{\"tags\":[\"france\"],\"owner\":{\"account_id\":8171534,\"reputation\":136,\"user_id\":24553,\"user_type\":\"registered\",\"profile_image\":\"https://www.gravatar.com/avatar/13e56b0d1c24b61b7941a7b2f33e4ebe?s=256&d=identicon&r=PG&f=y&so-version=2\",\"display_name\":\"Roger V.\",\"link\":\"https://expatriates.stackexchange.com/users/24553/roger-v\"},\"is_answered\":false,\"view_count\":2,\"answer_count\":0,\"score\":0,\"last_activity_date\":1791896912,\"creation_date\":1791882321,\"last_edit_date\":1791896912,\"question_id\":28513,\"content_license\":\"CC BY-SA 4.0\",\"link\":\"https://expatriates.stackexchange.com/questions/28513/in-france-when-can-biyicles-ride-against-the-traffic-in-one-way-streets-in-zone\",\"title\":\"In France: when can biyicles ride against the traffic in one way streets in zone 30?\",\"body\":\"<p>In may European countries bicycles are allowed to run against the traffic in one-way streets limited to low speeds (and provided that they ride on the appropriate side of the road and follow other traffic regulations.) There are however distinctions on whether it is applicable:</p>\\n<ul>\\n<li><p>in any one way street below the designated speed limit, provided no sign explicitly prohibiting this is present (30 km/h in France)<br />\\n<a href=\\\"https://i.sstatic.net/XtwMIRcg.png\\\" rel=\\\"nofollow noreferrer\\\"><img src=\\\"https://i.sstatic.net/XtwMIRcg.png\\\" alt=\\\"enter image description here\\\" /></a></p>\\n</li>\\n<li><p>only in the streets where a special sign is posted, warning the drivers that bicycles can ride in the opposite sense<br />\\n<a href=\\\"https://i.sstatic.net/DbGjQs4E.png\\\" rel=\\\"nofollow noreferrer\\\"><img src=\\\"https://i.sstatic.net/DbGjQs4E.png\\\" alt=\\\"enter image description here\\\" /></a></p>\\n</li>\\n</ul>\\n<p>As mentioned, I am specifically interested in the regulations applied to France. There is also a related issue as to whether the local authorities are obliged to indicate that bicycles are allowed or prohibited by posting one of the above-mentioned signs.</p>\\n\"}],\"has_more\":false,\"quota_max\":300,\"quota_remaining\":287}"
+}

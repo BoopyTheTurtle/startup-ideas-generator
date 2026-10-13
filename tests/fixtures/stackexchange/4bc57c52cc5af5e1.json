@@ -1,0 +1,16 @@
+{
+ "method": "GET",
+ "url": "https://api.stackexchange.com/2.3/questions?site=pm&fromdate=1791244800&sort=creation&order=desc&filter=withbody&pagesize=2&page=1",
+ "params": {
+  "site": "pm",
+  "fromdate": 1791244800,
+  "sort": "creation",
+  "order": "desc",
+  "filter": "withbody",
+  "pagesize": 2,
+  "page": 1
+ },
+ "status": 200,
+ "content_type": "application/json; charset=utf-8",
+ "text": "{\"items\":[{\"tags\":[\"planning\",\"communication\",\"scope\"],\"owner\":{\"account_id\":30702698,\"reputation\":1,\"user_id\":69602,\"user_type\":\"registered\",\"profile_image\":\"https://lh3.googleusercontent.com/a/ACg8ocK9SZeIHCdyxPrOr_yixikMU9Yz182vvdmDsPN-VT7X=k-s256\",\"display_name\":\"NeverJustBusy\",\"link\":\"https://pm.stackexchange.com/users/69602/neverjustbusy\"},\"is_answered\":true,\"view_count\":27,\"answer_count\":1,\"score\":0,\"last_activity_date\":1791363123,\"creation_date\":1791301912,\"question_id\":36002,\"content_license\":\"CC BY-SA 4.0\",\"link\":\"https://pm.stackexchange.com/questions/36002/we-agreed-one-finish-at-kickoff-each-person-delivered-a-different-one-how-do-w\",\"title\":\"We agreed one finish at kickoff. Each person delivered a different one. How do we stop that?\",\"body\":\"<p>Eight of us are delivering one customer result: their new price list is live in the store system on 30 April, and the old list is switched off that day. We wrote that sentence on the first slide. Everyone nodded.</p>\\n<p>Two weeks later “done” had split. Sales treats done as a demo the sponsor has already seen. The analyst treats done as a signed specification. I keep watching the board, where 40 of 55 tasks are closed, and I have been calling that progress. None of those three is the switch-off on 30 April.</p>\\n<p>On Friday the sponsor asked if we would make the date. In the room we had three answers. We do not have one place that says which version is the real finish, which open tasks still serve it, and which are extra work we added after kickoff.</p>\\n<p>What do you keep in front of the team so “done” stays that one date and that one result, not one definition per person?</p>\\n\"}],\"has_more\":false,\"quota_max\":300,\"quota_remaining\":292}"
+}
