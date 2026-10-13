@@ -45,6 +45,12 @@ hot EU initiatives get sampled, not read in full.
 - `python -m pipeline collect` and a Task Scheduler entry for weekly runs.
 - Source metrics: uptime, items, distinct authors, region, language.
 
+**Phase 1b shipped 2026-10-13.** Collectors: govuk (clean), wordpress (gray),
+firefox_addons (gray), and a generic RSS/Atom forum collector with 9 seed forums from
+report 07. Reviews added unit isolation (`guarded`), a 'partial' status, XML-declaration
+decoding, and username stripping in forum bodies. Database after both halves: 1,566 items
+from 9 collectors across US, UK, DE, IT, and 30+ EU countries.
+
 **Sub-agents:** one builder per collector in parallel worktrees, from the base class
 template; a reviewer checks each against the source's terms.
 **Demo:** a full harvest run; row counts and health per source.

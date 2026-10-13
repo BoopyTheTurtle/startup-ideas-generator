@@ -42,7 +42,7 @@ def cmd_collect(args) -> int:
     for r in results:
         line = f"{r.source:<16} {r.status:<13} fetched {r.fetched:>5}  new {r.new:>5}"
         print(line + (f"  {r.error.splitlines()[0]}" if r.error else ""))
-    return 0 if all(r.status == "ok" for r in results) else 1
+    return 0 if all(r.status in ("ok", "partial") for r in results) else 1
 
 
 def cmd_health(args) -> int:

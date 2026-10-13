@@ -200,9 +200,12 @@ def test_rotation_and_removed_plugin():
     rss(topic("t").replace("Replies:", "Antworten:")),
     rss(topic("t").replace("/support/topic/", "/support/forum/")),
 ])
-def test_schema_drift_raises(feed):
-    with pytest.raises(SchemaDrift):
-        run(fake(feed))
+def test_schema_drift_in_one_plugin_becomes_a_warning(feed):
+    # Each plugin is guarded; drift in one becomes a warning instead of failing the run.
+    c = WordPressSupport(max_items=10, plugins=["demo"], popular_pages=0)
+    state = State({"since:demo": "2026-10-01T00:00:00+00:00|"})
+    assert list(c.fetch(fake(feed), state)) == []
+    assert c.units_failed == ["demo"] and "SchemaDrift" in c.warnings[0]
 
 
 def test_popular_schema_drift():

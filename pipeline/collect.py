@@ -53,11 +53,24 @@ def _load_state(conn: sqlite3.Connection, source: str) -> State:
 
 
 def _save_state(conn: sqlite3.Connection, source: str, state: State) -> None:
+    conn.execute("DELETE FROM collector_state WHERE source = ?", (source,))
     conn.executemany(
         "INSERT INTO collector_state (source, key, value) VALUES (?, ?, ?)"
         " ON CONFLICT (source, key) DO UPDATE SET value = excluded.value",
         [(source, k, v) for k, v in state.values.items()],
     )
+
+
+def _unit_streaks(state: State, collector: Collector) -> dict[str, int]:
+    """Update per-unit consecutive-failure counts in state; return the failing ones."""
+    for unit in collector.units_ok:
+        state.values.pop(f"unitfail:{unit}", None)
+    streaks = {}
+    for unit in collector.units_failed:
+        n = int(state.get(f"unitfail:{unit}", "0")) + 1
+        state.set(f"unitfail:{unit}", str(n))
+        streaks[unit] = n
+    return streaks
 
 
 def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
@@ -111,28 +124,39 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
     finally:
         http.close()
         conn.commit()  # keep items stored before a failure; dedup makes re-fetch safe
+    if status == "ok" and collector.warnings:
+        every_unit_failed = collector.units_failed and not collector.units_ok
+        status = "failed" if every_unit_failed else "partial"
+        error = "; ".join(collector.warnings)
 
+    succeeded = status in ("ok", "partial")
+    streaks = _unit_streaks(state, collector)
     with conn:
-        if status == "ok":
+        if succeeded or collector.units_ok or collector.units_failed:
+            # A guarded collector's cursors match what was stored, so they are kept even
+            # when every unit failed; that also persists the per-unit failure streaks.
             _save_state(conn, src, state)
         conn.execute(
             f"INSERT INTO collector_health (source, last_attempt_at, last_success_at,"
             f" last_status, last_error, consecutive_failures, items_last_run)"
-            f" VALUES (?, {NOW}, CASE WHEN ? = 'ok' THEN {NOW} END, ?, ?,"
-            f"  CASE WHEN ? = 'ok' THEN 0 ELSE 1 END, ?)"
+            f" VALUES (?, {NOW}, CASE WHEN ? THEN {NOW} END, ?, ?,"
+            f"  CASE WHEN ? THEN 0 ELSE 1 END, ?)"
             f" ON CONFLICT (source) DO UPDATE SET"
             f"  last_attempt_at = excluded.last_attempt_at,"
             f"  last_success_at = COALESCE(excluded.last_success_at, last_success_at),"
             f"  last_status = excluded.last_status, last_error = excluded.last_error,"
-            f"  consecutive_failures = CASE WHEN excluded.last_status = 'ok' THEN 0"
+            f"  consecutive_failures = CASE WHEN excluded.last_status IN ('ok', 'partial') THEN 0"
             f"   ELSE consecutive_failures + 1 END,"
             f"  items_last_run = excluded.items_last_run",
-            (src, status, status, error, status, new),
+            (src, succeeded, status, error, succeeded, new),
         )
 
     log = lambda name, value, subject=src, layer="sources": runs.log_metric(  # noqa: E731
         conn, run_id, layer, name, value, subject)
-    log("ok", 1.0 if status == "ok" else 0.0)
+    for unit, streak in streaks.items():
+        log("unit_fail_streak", streak, f"{src}:{unit}")
+    log("ok", 1.0 if succeeded else 0.0)
+    log("partial", 1.0 if status == "partial" else 0.0)
     log("items_fetched", fetched)
     log("items_new", new)
     log("distinct_authors_new", len(authors))

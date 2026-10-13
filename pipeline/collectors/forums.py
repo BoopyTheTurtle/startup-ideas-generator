@@ -7,7 +7,15 @@ phpBB (/feed.php, /app.php/feed), and vBulletin (external.php?type=RSS2).
 
 Each forum carries its own licence and tos_class, stored per item. Only entries with an
 `approved` date run, and restricted ones never run. Http checks robots.txt for every
-feed URL, so a forum that later blocks us ends the run with status 'blocked'.
+feed URL. Each forum is guarded: one forum's bot wall, block, or outage becomes a warning
+(run status 'partial', with a per-forum failure streak); the run fails only when every
+forum fails.
+
+Feed order: XenForo and WoltLab sort by last post and date items by it ('active'), so
+created_at is left empty and the feed date goes to extra.feed_date. vBulletin and phpBB
+topic feeds list new threads ('new'), so their date is the creation date.
+
+Bodies drop quoted posts and phpBB's footer, both of which name other users.
 
 Feeds hold a fixed window of recent topics (often 20-50), so a busy forum can outrun a
 weekly run; the per-forum metrics show how often a run consumes the whole window.
@@ -18,6 +26,7 @@ keeps ties at a budget cut from being lost.
 """
 
 import html
+import re
 import tomllib
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -51,6 +60,7 @@ class Forum:
     license: str
     tos_class: str
     approved: str | None
+    order: str = "active"   # 'active': feed sorted by last post, dates = last activity; 'new'
 
 
 def load_forums(path: Path = CONFIG) -> list[Forum]:
@@ -62,8 +72,12 @@ def load_forums(path: Path = CONFIG) -> list[Forum]:
             raise ValueError(f"forums.toml: entry {f.get('id', '?')} missing {missing}")
         if f["tos_class"] not in TOS_CLASSES:
             raise ValueError(f"forums.toml: {f['id']}: bad tos_class {f['tos_class']!r}")
+        order = f.get("order", "active")
+        if order not in ("active", "new"):
+            raise ValueError(f"forums.toml: {f['id']}: order must be 'active' or 'new'")
         forums.append(Forum(f["id"], f["name"], f["feed"], f.get("lang"), f.get("country"),
-                            f["segment"], f["license"], f["tos_class"], f.get("approved") or None))
+                            f["segment"], f["license"], f["tos_class"], f.get("approved") or None,
+                            order))
     ids = [f.id for f in forums]
     if len(ids) != len(set(ids)):
         raise ValueError("forums.toml: duplicate ids")
@@ -74,6 +88,23 @@ def _utc(dt: datetime, raw: str) -> datetime:
     if dt.tzinfo is None:
         raise SchemaDrift(f"forums: date without offset: {raw!r}")
     return dt.astimezone(timezone.utc)
+
+
+def _strip_sid(url: str) -> str:
+    """phpBB adds a per-visit session id (sid=...) to links; without stripping, the same
+    post gets a new guid on every fetch."""
+    url = re.sub(r"[?&]sid=[0-9a-f]+(?=#|$)", "", url)            # last parameter
+    return re.sub(r"([?&])sid=[0-9a-f]+&", lambda m: m.group(1), url)  # middle parameter
+
+
+# Text that names other people: quoted posts ("<name> said:") and phpBB's per-post
+# footer ("Statistik: Verfasst von <name>"). Stripped so no username reaches the body.
+_QUOTE = re.compile(r"<blockquote\b.*?</blockquote>", re.S | re.I)
+_PHPBB_FOOTER = re.compile(r"<p>\s*(?:Statistik|Statistics):.*?</p>\s*(?:<hr\s*/?>)?", re.S | re.I)
+
+
+def clean_body(body: str) -> str:
+    return _PHPBB_FOOTER.sub("", _QUOTE.sub("", body)).strip()
 
 
 def _text(el) -> str:
@@ -92,8 +123,11 @@ class Entry:
 
 def parse_feed(xml: str, where: str) -> list[Entry]:
     """Parse RSS 2.0 or Atom into entries. Raises SchemaDrift on anything else."""
+    # The text is already decoded (pipeline.http honours the XML declaration), so drop the
+    # declaration: re-encoding while it still names another charset garbles accents.
+    xml = re.sub(r"^\s*<\?xml[^>]*\?>", "", xml, count=1)
     try:
-        root = ET.fromstring(xml.encode("utf-8"))
+        root = ET.fromstring(xml)
     except ET.ParseError as e:
         raise SchemaDrift(f"{where}: not XML ({e})") from e
     entries: list[Entry] = []
@@ -102,7 +136,7 @@ def parse_feed(xml: str, where: str) -> list[Entry]:
         if channel is None:
             raise SchemaDrift(f"{where}: rss without channel")
         for it in channel.findall("item"):
-            guid = _text(it.find("guid")) or _text(it.find("link"))
+            guid = _strip_sid(_text(it.find("guid")) or _text(it.find("link")))
             raw_date = _text(it.find("pubDate"))
             if not guid or not raw_date:
                 raise SchemaDrift(f"{where}: item missing guid/link or pubDate")
@@ -113,10 +147,11 @@ def parse_feed(xml: str, where: str) -> list[Entry]:
             body = _text(it.find("content:encoded", NS)) or _text(it.find("description"))
             author = _text(it.find("dc:creator", NS)) or _text(it.find("author")) or None
             entries.append(Entry(guid, html.unescape(_text(it.find("title"))),
-                                 _text(it.find("link")) or None, body, author, published))
+                                 _strip_sid(_text(it.find("link"))) or None, body, author,
+                                 published))
     elif root.tag == f"{{{NS['atom']}}}feed":
         for it in root.findall("atom:entry", NS):
-            guid = _text(it.find("atom:id", NS))
+            guid = _strip_sid(_text(it.find("atom:id", NS)))
             raw_date = _text(it.find("atom:published", NS)) or _text(it.find("atom:updated", NS))
             if not guid or not raw_date:
                 raise SchemaDrift(f"{where}: entry missing id or date")
@@ -127,7 +162,7 @@ def parse_feed(xml: str, where: str) -> list[Entry]:
             link = None
             for ln in it.findall("atom:link", NS):
                 if ln.get("rel", "alternate") == "alternate":
-                    link = ln.get("href")
+                    link = _strip_sid(ln.get("href") or "") or None
                     break
             body = _text(it.find("atom:content", NS)) or _text(it.find("atom:summary", NS))
             author = _text(it.find("atom:author/atom:name", NS)) or None
@@ -157,7 +192,8 @@ class Forums(Collector):
             if share <= 0:
                 continue
             got = 0
-            for item in self._forum(http, state, forum, share):
+            # One forum's bot wall or outage must not cost the others their run.
+            for item in self.guarded(forum.id, self._forum(http, state, forum, share)):
                 got += 1
                 yield item
             remaining -= got
@@ -173,7 +209,7 @@ class Forums(Collector):
             ts, guid = cur.split("|", 1)
             cursor = (datetime.fromisoformat(ts), guid)
         fresh = sorted((e for e in entries
-                        if e.body.strip() and (cursor is None or (e.published, e.guid) > cursor)),
+                        if clean_body(e.body) and (cursor is None or (e.published, e.guid) > cursor)),
                        key=lambda e: (e.published, e.guid))
         # Keep the newest `share`; older overflow is sampled away, as in other collectors.
         for e in fresh[-share:] if share < len(fresh) else fresh:
@@ -182,13 +218,15 @@ class Forums(Collector):
                 source_id=f"{forum.id}:{e.guid}",
                 url=e.link,
                 title=e.title or None,
-                body=e.body,
+                body=clean_body(e.body),
                 # Prefixed so the same username on two forums hashes differently.
                 author=f"{forum.id}:{e.author}" if e.author else None,
-                created_at=e.published.isoformat(),
+                # In 'active' feeds the date is the thread's last post, not its creation.
+                created_at=e.published.isoformat() if forum.order == "new" else None,
                 lang=forum.lang,
                 country=forum.country,
                 extra={"forum": forum.id, "segment": forum.segment, "html": True,
+                       "feed_order": forum.order, "feed_date": e.published.isoformat(),
                        "feed_window": len(entries), "window_all_new": len(fresh) == len(entries)},
                 license=forum.license,
                 tos_class=forum.tos_class,

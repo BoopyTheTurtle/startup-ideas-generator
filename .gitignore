@@ -11,6 +11,8 @@ tests/fixtures/eu_haveyoursay/
 tests/fixtures/firefox_addons/
 # WordPress.org forum posts belong to their authors.
 tests/fixtures/wordpress/
+# Forum posts belong to their authors.
+tests/fixtures/forums/
 
 # Secrets
 .env

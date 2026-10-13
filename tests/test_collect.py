@@ -119,3 +119,59 @@ def test_discover_finds_real_collectors():
     for name, cls in found.items():
         assert cls.tos_class in ("clean", "gray", "restricted"), name
         assert cls.license and cls.regions, name
+
+
+class Warns(Fake):
+    name = "warns"
+
+    def fetch(self, http, state):
+        yield from super().fetch(http, state)
+        self.warnings.append("site x: blocked")
+
+
+def test_warnings_make_a_partial_run_that_still_saves_state(conn):
+    Warns.items, Warns.fail_after = items(2), None
+    r = run(conn, Warns)
+    assert r.status == "partial" and "site x" in r.error
+    h = conn.execute("SELECT * FROM collector_health WHERE source='warns'").fetchone()
+    assert h["last_status"] == "partial" and h["last_success_at"] and h["consecutive_failures"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM collector_state WHERE source='warns'").fetchone()[0] == 1
+
+
+class Units(Fake):
+    """Two units; unit 'b' fails unless told otherwise."""
+    name = "units"
+    fail_units: set[str] = set()
+
+    def fetch(self, http, state):
+        for unit in ("a", "b"):
+            yield from self.guarded(unit, self._unit(unit))
+
+    def _unit(self, unit):
+        if unit in self.fail_units:
+            raise RuntimeError(f"{unit} down")
+        yield Item(source_id=unit, body=f"text {unit}", license="cc0", tos_class="clean")
+
+
+def test_every_unit_failing_fails_the_run_but_keeps_streaks(conn):
+    Units.fail_units = {"a", "b"}
+    assert run(conn, Units).status == "failed"
+    assert run(conn, Units).status == "failed"
+    streak = conn.execute("SELECT value FROM collector_state WHERE key='unitfail:b'").fetchone()
+    assert streak[0] == "2"
+    h = conn.execute("SELECT consecutive_failures FROM collector_health WHERE source='units'").fetchone()
+    assert h[0] == 2
+
+
+def test_one_failing_unit_is_partial_and_streak_clears_on_recovery(conn):
+    Units.fail_units = {"b"}
+    assert run(conn, Units).status == "partial"
+    Units.fail_units = set()
+    assert run(conn, Units).status == "ok"
+    assert conn.execute("SELECT COUNT(*) FROM collector_state WHERE key LIKE 'unitfail:%'").fetchone()[0] == 0
+
+
+def test_per_item_terms_override_reaches_the_database(conn):
+    Units.fail_units = set()
+    run(conn, Units)
+    assert {r[0] for r in conn.execute("SELECT tos_class FROM raw_item WHERE source='units'")} == {"clean"}

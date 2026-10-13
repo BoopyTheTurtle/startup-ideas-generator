@@ -5,7 +5,7 @@ deduplicates, updates health, and logs metrics. Collectors never touch the datab
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -64,6 +64,22 @@ class Collector(ABC):
 
     def __init__(self, max_items: int = 500):
         self.max_items = max_items
+        # Problems with one part of a run (a forum, a site) that did not stop the rest.
+        # A run with warnings ends 'partial', or 'failed' when every unit failed.
+        self.warnings: list[str] = []
+        self.units_ok: list[str] = []
+        self.units_failed: list[str] = []
+
+    def guarded(self, unit: str, items: Iterable[Item]) -> Iterator[Item]:
+        """Yield from one unit (a forum, a plugin), turning its failure into a warning
+        so the other units still run. The runner tracks a failure streak per unit."""
+        try:
+            yield from items
+        except Exception as e:  # noqa: BLE001 — isolation is the point
+            self.units_failed.append(unit)
+            self.warnings.append(f"{unit}: {type(e).__name__}: {str(e)[:200]}")
+            return
+        self.units_ok.append(unit)
 
     @abstractmethod
     def fetch(self, http: Http, state: State) -> Iterator[Item]:

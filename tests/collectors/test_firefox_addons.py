@@ -162,9 +162,13 @@ def test_translated_name_fallback():
     rating(score=5),                                # score filter ignored
     rating(addon={"id": 2, "slug": "y"}),           # addon filter ignored
 ])
-def test_schema_drift_raises(broken):
-    with pytest.raises(SchemaDrift):
-        run_fake([broken])
+def test_schema_drift_in_one_addon_becomes_a_warning(broken):
+    # Each add-on is guarded, so drift in one becomes a warning; the runner turns a run in
+    # which every add-on failed into status 'failed'.
+    c = FirefoxAddons(max_items=10, categories=["tabs"], pool_depth=1,
+                      addons_per_category=1, now=NOW)
+    assert list(c.fetch(FakeHttp([broken]), State({}))) == []
+    assert c.units_failed and "SchemaDrift" in c.warnings[0]
 
 
 def test_every_search_empty_is_schema_drift():

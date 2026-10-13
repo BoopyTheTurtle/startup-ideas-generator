@@ -11,4 +11,122 @@
 # segment = "trades"              # who posts there
 # license = "Posts (c) their authors"
 # tos_class = "clean"             # clean, gray, restricted
+# order = "active"                # "active": sorted by last post (XenForo, WoltLab); "new": new threads
 # approved = "2026-10-13"         # date Edgar approved it; empty = not running
+
+# Seed set from docs/research/07-seed-forums.md (vetted 2026-10-13). Edgar delegated the
+# choice ("find them"); the seeds were approved on his behalf on 2026-10-13, pending his
+# confirmation (STATUS.md). Contractor UK is gray under SPEC's named-AI-bot rule.
+
+[[forum]]
+id = "dementia_uk"
+name = "Dementia Support Forum (Alzheimer's Society)"
+feed = "https://forum.alzheimers.org.uk/forums/-/index.rss"
+lang = "en"
+country = "GB"
+segment = "family caregivers"
+license = "Posts (c) their authors; forum rules govern posters only"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "diabetes_uk"
+name = "Diabetes UK forum"
+feed = "https://forum.diabetes.org.uk/boards/forums/-/index.rss"
+lang = "en"
+country = "GB"
+segment = "patients with chronic illness"
+license = "Posts (c) their authors, licensed to Diabetes UK"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "contractor_uk"
+name = "Contractor UK"
+feed = "https://forums.contractoruk.com/external?type=rss2"
+lang = "en"
+country = "GB"
+segment = "contractors and freelancers (tax, IR35, umbrella pay)"
+license = "Site asserts copyright on posts; no automation clause"
+tos_class = "gray"   # robots.txt blocks Amazonbot and Bytespider by name (SPEC: named AI-bot blocks are gray)
+order = "new"
+approved = "2026-10-13"
+
+[[forum]]
+id = "terrylove"
+name = "Terry Love Plumbing & Remodel"
+feed = "https://terrylove.com/forums/forums/-/index.rss"
+lang = "en"
+country = "US"
+segment = "home owners and plumbers"
+license = "Posts (c) their authors; stock XenForo terms"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "truckersreport"
+name = "TheTruckersReport"
+feed = "https://www.thetruckersreport.com/truckingindustryforum/forums/-/index.rss"
+lang = "en"
+country = "US"
+segment = "truck drivers and owner-operators"
+license = "Posts (c) their authors; stock XenForo terms"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "lehrerforen"
+name = "lehrerforen.de"
+feed = "https://www.lehrerforen.de/thread-list-rss-feed/"
+lang = "de"
+country = "DE"
+segment = "teachers and school leaders"
+license = "Posts (c) their authors; rules govern posters only"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "finanztip"
+name = "Finanztip Community"
+feed = "https://www.finanztip.de/community/forum/thread-list-rss-feed/"
+lang = "de"
+country = "DE"
+segment = "personal finance consumers"
+license = "Posts (c) their authors; no third-party clause"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "landtreff"
+name = "Landtreff"
+feed = "https://www.landtreff.de/feed.php?mode=topics"   # topics only (verified 2026-10-13); the default feed lists every reply
+order = "new"
+lang = "de"
+country = "DE"
+segment = "farmers and foresters"
+license = "Posts (c) their authors; 2018 terms govern posters only"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "energeticambiente"
+name = "Energeticambiente"
+feed = "https://www.energeticambiente.it/forums/-/index.rss"
+lang = "it"
+country = "IT"
+segment = "home owners (energy, heating, solar)"
+license = "Posts (c) their authors; stock XenForo terms"
+tos_class = "clean"
+approved = "2026-10-13"
+
+[[forum]]
+id = "futura_sciences"
+name = "Futura-Sciences forums"
+feed = "https://forums.futura-sciences.com/external.php?type=RSS2"
+order = "new"
+lang = "fr"
+country = "FR"
+segment = "home owners (heating, appliances)"
+license = "Legal notice forbids electronic reproduction"
+tos_class = "gray"
+approved = ""   # needs Edgar's decision: we store post text, which the notice forbids

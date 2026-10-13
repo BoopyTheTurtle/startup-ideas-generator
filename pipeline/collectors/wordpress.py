@@ -176,7 +176,7 @@ class WordPressSupport(Collector):
             if share <= 0:
                 continue
             got = 0
-            for item in self._plugin(http, state, slug, share, default):
+            for item in self.guarded(slug, self._plugin(http, state, slug, share, default)):
                 got += 1
                 yield item
             remaining -= got
@@ -236,7 +236,7 @@ class WordPressSupport(Collector):
     def _parse(text: str, slug: str) -> tuple[str | None, list[dict]]:
         where = f"wordpress feed {slug}"
         try:
-            root = ElementTree.fromstring(text.encode("utf-8"))
+            root = ElementTree.fromstring(text)  # already decoded by pipeline.http
         except ParseError as e:
             raise SchemaDrift(f"{where}: not XML ({e})") from e
         channel = root.find("channel")

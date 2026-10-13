@@ -24,7 +24,8 @@ public_timestamp moves on every major update: a consultation that closes and lat
 gets a government response, or a CMA case that publishes a decision, reappears ahead of
 the cursor. source_id is "<content_id>:<document_type>", so each stage of a document
 (open, closed, outcome) is stored once: a consultation first seen open gains its outcome
-text later. Re-fetching an update within the same stage adds nothing.
+text later. CMA cases add their case_state (open, closed), so a decision is stored too.
+Re-fetching an update within the same stage adds nothing.
 
 Cursors, one pair per stream (consultations, cma):
   <stream>_since    public_timestamp of the last item yielded (UTC ISO)
@@ -178,12 +179,18 @@ class GovUk(Collector):
         if doc.get("withdrawn_notice"):
             extra["withdrawn"] = True
 
+        # A stage per stored version: consultations move open -> closed -> outcome; CMA
+        # cases keep one document type, so their case_state marks the stage instead.
+        stage = doc["document_type"]
+        if stage == "cma_case":
+            stage = f"cma_case:{extra['case_state']}"
+
         primary = doc["links"].get("primary_publishing_organisation") or []
         author = (primary[0].get("title") if primary and isinstance(primary[0], dict)
                   else None) or next((o.get("title") for o in orgs
                                       if isinstance(o, dict) and o.get("title")), None)
         return Item(
-            source_id=f"{r['content_id']}:{doc['document_type']}",
+            source_id=f"{r['content_id']}:{stage}",
             url=SITE + doc["base_path"],
             title=doc["title"],
             body=body,

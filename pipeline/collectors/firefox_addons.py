@@ -128,14 +128,14 @@ class FirefoxAddons(Collector):
         self.now = now
 
     def fetch(self, http: Http, state: State) -> Iterator[Item]:
-        # State is written eagerly: the runner stops pulling at max_items, so code after
-        # the last yield may never run.
+        # State is written eagerly so a run cut short resumes where it stopped.
         rotation = int(state.get("rotation", "0"))
         state.set("rotation", str(rotation + 1))
         floor = (self.now or datetime.now(timezone.utc)) - MAX_AGE
         addons = self._pick_addons(http, rotation)
 
-        streams = [self._ratings(http, state, a, floor) for a in addons]
+        # Each add-on is guarded: one failing add-on becomes a warning, not a failed run.
+        streams = [self.guarded(a["slug"], self._ratings(http, state, a, floor)) for a in addons]
         remaining = self.max_items
         while streams and remaining > 0:
             share = max(1, math.ceil(remaining / len(streams)))

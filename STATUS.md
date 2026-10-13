@@ -6,7 +6,7 @@ on top. Keep "Current state" accurate; append to "Log".
 
 ## Current state (2026-10-13)
 
-**Phase:** 1b, Harvest (second half). Phases 0 and 1a shipped.
+**Phase:** 1b done pending Edgar's answers below. Next: Phase 2 (extract and map).
 
 **Running weekly:** Task Scheduler task `startup-ideas-generator weekly`, Mondays 10:00,
 runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
@@ -20,25 +20,25 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 | uk_petitions | live | clean | open + rejected petitions |
 | eu_haveyoursay | live | gray | undocumented API; fixtures local-only |
 | appstore | built, off | restricted | robots.txt and Apple terms forbid it; runs only with `--only` |
-| govuk | built, uncommitted | clean | consultations + CMA cases; source_id per stage done |
-| wordpress | built, uncommitted | gray | 105-plugin pool, 35 per run; plugins API blocked by robots.txt, uses directory REST routes; fixtures local-only |
-| firefox_addons | built, uncommitted | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
-| forums (generic) | built, no forums approved yet | per forum | RSS/Atom; list in `pipeline/collectors/forums.toml`; per-item licence/tos_class |
+| govuk | live | clean | consultations + CMA cases; one item per stage (CMA: per case_state) |
+| wordpress | live | gray | 105-plugin pool, 35 per run; plugins API blocked by robots.txt, uses directory REST routes; fixtures local-only |
+| firefox_addons | live | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
+| forums (generic) | live, 9 forums | per forum | 170 items; every feed returned its full window, so weekly runs miss most posts; Futura-Sciences (gray) off |
 
-**In progress**
+**Waiting on Edgar**
 
-- A research agent vetting seed forums into `docs/research/07-seed-forums.md`. If those files are missing or
-  incomplete, redo the work from the briefs implied by SPEC stage 1 and CLAUDE.md
-  "Collectors".
+1. Confirm the 9 forum seeds approved on his behalf (`forums.toml`), incl. Contractor UK
+   now gray (named AI-bot block in robots.txt).
+2. Daily forum polling: add a second scheduled task running `collect --only forums`?
+   Feeds hold 15-20 threads and turn over in hours.
+3. Futura-Sciences (gray; its notice forbids electronic reproduction): enable or skip.
 
 **Next steps**
 
-1. ~~Integrate `govuk` source_id per stage~~ done; commit with the rest of 1b.
-2. ~~Integrate `wordpress` and `firefox_addons`~~ done (both gray, fixtures gitignored).
-3. ~~Build the generic forum collector~~ done. Fill `forums.toml` from report 07 once
-   the forum agent finishes (it was cut off by a usage limit and resumed); Edgar approves.
-4. Code review of Phase 1b, then commit, push, update this file and `PLAN.md`.
-5. Phase 2: extraction and mapping.
+1. Phase 2: extraction and mapping (SPEC stages 2-3, PLAN Phase 2).
+2. Stage 8 backlog (from reviews): HN volume; Stack Exchange partial runs should use
+   `warnings`; GOV.UK per-document isolation; content-hash dedup for identical stage
+   bodies; robots `Content-Signal` lines (e.g. ai-train=no) recorded per source.
 
 **Decisions made** (also in SPEC "Decisions")
 
@@ -59,6 +59,15 @@ runs `scripts/weekly.ps1` (collect + health). First scheduled run: 2026-10-19.
 
 ### 2026-10-13
 
+- Phase 1b review fixes: `Collector.guarded()` isolates units (forums, plugins, add-ons)
+  with per-unit failure streaks; a run where every unit fails is 'failed'; forum bodies
+  drop quotes and phpBB footers (usernames); phpBB sids stripped in Atom; 'active' feeds
+  leave created_at empty; CMA ids include case_state; GOV.UK fixture emails redacted.
+  Purged and re-collected forums and govuk rows. Database: 1,566 items.
+
+- Forum seeds vetted (report 07: 82 endpoints probed, 9 clean seeds approved by
+  delegation). Added XML-declaration decoding, a 'partial' run status, per-forum failure
+  isolation, phpBB sid stripping. Forums first run: 170 items.
 - Phase 1b: govuk, wordpress, firefox_addons collectors (wordpress and firefox gray,
   fixtures local-only); generic forums collector with TOML config; fixed a
   clock-dependent Stack Exchange test.

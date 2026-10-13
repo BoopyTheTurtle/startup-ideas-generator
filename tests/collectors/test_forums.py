@@ -35,7 +35,7 @@ def it(g, date, title="Q", who="amy", body="How do you track jobs?"):
 
 
 FORUM = Forum("trades", "Trades Forum", "https://f.example/latest.rss", "en", "GB",
-              "trades", "posts (c) authors", "gray", "2026-10-13")
+              "trades", "posts (c) authors", "gray", "2026-10-13", "new")
 
 
 class FakeHttp:
@@ -109,3 +109,55 @@ def test_bad_feeds_raise_schema_drift(bad):
 def test_config_file_loads():
     for f in load_forums():
         assert f.tos_class in ("clean", "gray", "restricted")
+
+
+def test_strip_phpbb_session_ids():
+    from pipeline.collectors.forums import _strip_sid
+    assert _strip_sid("https://l.de/viewtopic.php?sid=ab12&t=5") == "https://l.de/viewtopic.php?t=5"
+    assert _strip_sid("https://l.de/viewtopic.php?t=5&sid=ab12") == "https://l.de/viewtopic.php?t=5"
+    assert _strip_sid("https://l.de/viewtopic.php?t=5&sid=ab12&p=9") == "https://l.de/viewtopic.php?t=5&p=9"
+
+
+def test_latin1_feed_keeps_accents():
+    import httpx
+
+    from pipeline.http import _decode
+    body = ('<?xml version="1.0" encoding="ISO-8859-1"?><rss version="2.0"><channel>'
+            '<item><title>Chaudière froide</title><guid>g</guid>'
+            '<pubDate>Mon, 12 Oct 2026 09:00:00 +0200</pubDate>'
+            '<description>radiateurs</description></item></channel></rss>').encode("latin-1")
+    r = httpx.Response(200, headers={"content-type": "application/rss+xml"}, content=body)
+    [e] = parse_feed(_decode(r), "t")
+    assert e.title == "Chaudière froide"
+
+
+def test_one_broken_forum_does_not_stop_the_rest():
+    broken = Forum(**{**FORUM.__dict__, "id": "wall", "feed": "https://wall/x"})
+    feed = rss(it("1", "Mon, 12 Oct 2026 09:00:00 +0000"))
+    c = Forums(forums=[broken, FORUM])
+    items = list(c.fetch(FakeHttp({broken.feed: "<html>challenge</html>", FORUM.feed: feed}),
+                         State({})))
+    assert [i.extra["forum"] for i in items] == ["trades"]
+    assert len(c.warnings) == 1 and c.warnings[0].startswith("wall: SchemaDrift")
+
+
+def test_active_feeds_leave_created_at_empty():
+    active = Forum(**{**FORUM.__dict__, "order": "active"})
+    feed = rss(it("1", "Mon, 12 Oct 2026 09:00:00 +0000"))
+    [item] = Forums(forums=[active]).fetch(FakeHttp({active.feed: feed}), State({}))
+    assert item.created_at is None and item.extra["feed_date"] == "2026-10-12T09:00:00+00:00"
+
+
+def test_bodies_drop_quotes_and_phpbb_footer():
+    from pipeline.collectors.forums import clean_body
+    body = ('<blockquote data-quote="alice"><div>alice said:</div>old text</blockquote>'
+            '<p>My own problem</p><p>Statistik: Verfasst von <a href="x">bauer hans</a>'
+            ' — Di Okt 13</p><hr />')
+    assert clean_body(body) == "<p>My own problem</p>"
+
+
+def test_atom_ids_and_links_lose_phpbb_sids():
+    atom = ATOM.replace("tag:x,1", "https://l.de/viewtopic.php?t=1&amp;p=2&amp;sid=abc123#p2").replace(
+        "https://x.example/threads/1", "https://l.de/viewtopic.php?t=1&amp;p=2&amp;sid=abc123#p2")
+    [e] = parse_feed(atom, "t")
+    assert e.guid == e.link == "https://l.de/viewtopic.php?t=1&p=2#p2"

@@ -11,6 +11,7 @@ Tests run in replay mode, so the suite never touches the network.
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,22 @@ class Response:
                 request=httpx.Request("GET", self.url),
                 response=httpx.Response(self.status_code),
             )
+
+
+_XML_DECL = re.compile(rb"""^\s*<\?xml[^>]*encoding=["']([A-Za-z0-9._-]+)["']""")
+
+
+def _decode(r: httpx.Response) -> str:
+    """Text of a response. Without a charset in Content-Type, httpx falls back to UTF-8,
+    which garbles feeds declared as e.g. ISO-8859-1; honour the XML declaration then."""
+    if "charset=" not in r.headers.get("content-type", "").lower():
+        m = _XML_DECL.match(r.content[:200])
+        if m:
+            try:
+                return r.content.decode(m.group(1).decode(), errors="replace")
+            except LookupError:
+                pass
+    return r.text
 
 
 def _key(method: str, url: str, params: dict | None, body: Any) -> str:
@@ -137,7 +154,7 @@ class Http:
                 time.sleep(wait_s)
                 continue
             return Response(str(r.url), r.status_code,
-                            r.headers.get("content-type", ""), r.text)
+                            r.headers.get("content-type", ""), _decode(r))
         raise AssertionError("unreachable")
 
     def check_robots(self, url: str) -> None:
