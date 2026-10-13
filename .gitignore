@@ -1,0 +1,31 @@
+# Data stays local: sources carry their own licences, and the held-out eval set must
+# stay hidden from agents.
+data/
+evals/heldout/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Model caches
+.cache/
+models/
+
+# Node / Next.js
+node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
