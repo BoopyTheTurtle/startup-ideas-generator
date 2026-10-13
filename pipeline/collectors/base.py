@@ -64,6 +64,9 @@ class Collector(ABC):
     tos_class: ClassVar[str]           # clean, gray, restricted
     regions: ClassVar[list[str]]       # countries or 'EU'/'GLOBAL' this source covers
     min_interval: ClassVar[float] = 1.0  # seconds between requests
+    # False: built and kept for on-demand use, but left out of default runs (e.g. sources
+    # whose items proved to be noise as a stream). `collect --only NAME` still runs them.
+    default_on: ClassVar[bool] = True
 
     def __init__(self, max_items: int = 500):
         self.max_items = max_items

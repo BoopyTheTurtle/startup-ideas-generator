@@ -214,6 +214,9 @@ class EuHaveYourSay(Collector):
     name = "eu_haveyoursay"
     license = "Feedback (c) submitters, published with consent; EC metadata CC BY 4.0 (2011/833/EU)"
     tos_class = "gray"
+    # Off as a weekly stream since 2026-10-13 (4 of 27 labeled items were pain); kept for on-demand
+    # "why now" lookups via `collect --only`.
+    default_on = False
     regions = ["EU"]
     min_interval = 1.0
 

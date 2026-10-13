@@ -4,77 +4,79 @@ The handoff log. Read this first when picking up work; update it before you stop
 `PLAN.md` holds the phases; this file holds where work stands right now. Newest entry
 on top. Keep "Current state" accurate; append to "Log".
 
-## Current state (2026-10-13)
+## Current state (2026-10-13, end of day)
 
-**Phase:** 2, Extract and map (in progress).
+**Phase:** 2 done except its eval demo; mid-way through the first stage-8-style loop
+(source review + extraction prompt tightening). Phase 3 (themes layer + radar) is next.
 
 **Scheduled (Task Scheduler, current user):**
-- `startup-ideas-generator weekly`: Mondays 10:00, `scripts/weekly.ps1` (all collectors
-  except forums, then health). First run 2026-10-19.
-- `startup-ideas-generator forums daily`: 09:00 daily, `scripts/daily-forums.ps1`. First
-  run 2026-10-14.
+- `startup-ideas-generator forums daily`: 09:00 daily, `scripts/daily-forums.ps1`
+  (collect forums, extract forums ≤150, scrub). 90-min limit. First run 2026-10-14.
+- `startup-ideas-generator weekly`: Mondays 10:00, `scripts/weekly.ps1` (collect all
+  default-on sources except forums, extract ≤600, scrub, map, curate, health).
+  First run 2026-10-19. Caps agreed with Edgar: ~1,650 items/week.
 
-**Collectors**
+**Default-on streams:** hn, stackexchange (diy + webapps only), uk_petitions, wordpress,
+firefox_addons, forums (10 forums incl. Futura-Sciences with retain_text = false).
+Off by default (run with `collect --only`): govuk, eu_haveyoursay (labels showed noise),
+appstore (restricted).
 
-| Name | State | tos_class | Notes |
-|---|---|---|---|
-| hn | live | clean | ~44 items/week from pain phrases; too thin, a stage 8 target |
-| stackexchange | live | gray | 15 non-programming sites; 300 requests/day keyless quota |
-| uk_petitions | live | clean | open + rejected petitions |
-| eu_haveyoursay | live | gray | undocumented API; fixtures local-only |
-| appstore | built, off | restricted | robots.txt and Apple terms forbid it; runs only with `--only` |
-| govuk | live | clean | consultations + CMA cases; one item per stage (CMA: per case_state) |
-| wordpress | live | gray | 105-plugin pool, 35 per run; plugins API blocked by robots.txt, uses directory REST routes; fixtures local-only |
-| firefox_addons | live | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
-| forums (generic) | live, 9 forums | per forum | 170 items; every feed returned its full window, so weekly runs miss most posts; Futura-Sciences (gray) off |
+**Data:** 1,600 raw items; ~520 extracted; ~370 pains; 3 problems (all Firefox add-ons).
 
-**Phase 2 state**
+**Eval:** Edgar labeled 239 working items (76 pain, 146 not, 17 unsure) and is now
+labeling the held-out set. Agents never read the held-out set (`.claude/settings.json`
+deny rules; `eval-status` shows only its total). Current prompt 5f6ac038f30e on the
+working set: precision ~0.49, recall ~0.77. The model calls too much pain, and misses
+petitions phrased as solutions.
 
-- Built, reviewed, fixed, committed: extraction (headless `claude -p`, claude-haiku-5-5,
-  settings/hooks/MCP off, Unicode-safe quote grounding, opt-in re-extraction, batch
-  splitting), extract-and-discard (titles blanked too, copied-text checks, secure_delete),
-  mapping (e5-small; 0.94/0.91 thresholds; membership carried across re-extraction;
-  migration 004; clusters computed outside the write txn), curator (claude-sonnet-5-5),
-  /label + `eval` (held-out results never touch the DB), cross-process lock, atomic
-  migrations. 192 tests.
-- Live: 1,600 raw items, 380 extracted (prompt 0c6c40f4e6c5), 266 pains, 3 problems.
-  The extract prompt is now 5f6ac038f30e (untrusted-data rule); new items use it,
-  old ones keep theirs unless `extract --reextract`.
-- Waiting on Edgar: label ~200 working + ~100 held-out items at /label (needed for the
-  Phase 2 eval demo); decide on a `.claude/settings.json` deny rule for evals/heldout/.
-- Edgar, labeling: "mostly noise, will have to re-evaluate sources". Once labels exist,
-  run `eval-status` and `eval --prompt-version 0c6c40f4e6c5` for per-source pain rates
-  and precision, and bring a source review (keep / narrow / drop) to Edgar.
-- Decided: Phase 3 starts with a themes layer (loose topic clusters recomputed each run,
-  never stored as problems) as the radar's broad entry point.
+**Open question for Edgar (ask first thing):** his labels suggest "pain" means a problem
+shared by many people or worth a business, not one person's bug report: he marked
+individual tech-support posts and extension malfunctions *not pain*, but most petitions
+*pain* even when phrased as a demand ("free travel card for under-18s"). Confirm the
+definition in his words before writing prompt v3, then update the definition shown on
+/label so future labels match.
 
 **Next steps**
 
-1. Phase 2: extraction and mapping (SPEC stages 2-3, PLAN Phase 2). Include a per-source
-   `retain_text = false` mode: extract in the same run, store derived fields + URL only,
-   never the post text. Then enable Futura-Sciences with it (Edgar's call, 2026-10-13).
-2. Stage 8 backlog (from reviews): HN volume; Stack Exchange partial runs should use
-   `warnings`; GOV.UK per-document isolation; content-hash dedup for identical stage
-   bodies; robots `Content-Signal` lines (e.g. ai-train=no) recorded per source.
+1. Get Edgar's pain definition; write extract prompt v3 (general rules, no item-specific
+   wording); `extract --labeled --reextract`; `eval`; Edgar runs the held-out eval himself.
+2. Non-English forums: Edgar marks them "unsure"; suggest browser translate on /label, or
+   add an English rendering (costs usage).
+3. Phase 3: themes layer (mean-centred e5 topic clusters per run, curator-named), radar,
+   problem detail, merge queue, steering actions (PLAN.md).
+4. Stage 8 backlog: HN volume; Stack Exchange partial runs should use `warnings`;
+   GOV.UK per-document isolation; content-hash dedup of identical stage bodies; robots
+   `Content-Signal` lines; embedding model upgrade (embeddinggemma-300m) or LLM-checked
+   clustering, since e5-small groups by domain more than by problem.
 
 **Decisions made** (also in SPEC "Decisions")
 
 - Gray sources run by default; private analysis only, no training, no republishing.
-- Restricted sources never run by default.
+- Restricted sources never run by default; `default_on = False` sources only on demand.
 - Fixtures for non-clean sources stay out of the public repo.
-- Edgar wants no founder-fit scoring; market merit only.
+- No founder-fit scoring; market merit only.
+- Extraction via headless `claude -p` on Edgar's subscription (no API key set).
+- Themes layer opens Phase 3.
 
 **Gotchas**
 
 - Paths contain spaces. PowerShell 5.1 has no `&&`.
-- `next dev` is Next.js 16: read `web/node_modules/next/dist/docs/` before writing app code.
-- The Stack Exchange quota is 300 requests/day per IP; avoid re-recording it often.
-- Officials' names and contact details appear in some GOV.UK CMA bodies; extraction
-  should drop contact details.
+- Any shell command containing the held-out folder's name is denied by project settings;
+  write "held-out" in commit messages.
+- `next dev` is Next.js 16: read `web/node_modules/next/dist/docs/` before app code.
+- Stack Exchange keyless quota: 300 requests/day per IP.
+- `extract`, `curate`, `--reextract` spend Edgar's subscription; always cap them.
+- Python heredocs in Bash can turn ``/`` into control characters; prefer the Edit tool
+  for regex-bearing lines.
 
 ## Log
 
 ### 2026-10-13
+
+- Source review from Edgar's 239 working labels: govuk and eu_haveyoursay off by
+  default (`Collector.default_on`), Stack Exchange cut to diy + webapps. Added
+  `extract --labeled`; extracted the labeled items; precision ~0.49. Prompt v3 waits on
+  Edgar's pain definition. `eval-status` now hides held-out composition.
 
 - Phase 2 review: 13 findings fixed by two agents (extraction side, mapping side);
   migration 004 applied live; map rerun idempotent.

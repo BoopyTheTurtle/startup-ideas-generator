@@ -24,7 +24,7 @@ def recorded():
     http = Http("stackexchange", min_interval=0, mode=os.environ.get("SIG_HTTP", "replay"))
     state = State({f"fromdate:{site}": SINCE for site in SITES})
     try:
-        return list(StackExchange(max_items=MAX_ITEMS).fetch(http, state)), state
+        return list(StackExchange(max_items=MAX_ITEMS, sites=SITES).fetch(http, state)), state
     finally:
         http.close()
 
@@ -81,7 +81,7 @@ def test_stops_cleanly_when_quota_low():
     page = {"items": [question(1)], "has_more": False, "quota_remaining": 3}
     http = FakeHttp([page])
     state = State({f"fromdate:{s}": "1791200000" for s in SITES})  # fixed: no clock dependence
-    items = list(StackExchange(max_items=30).fetch(http, state))
+    items = list(StackExchange(max_items=30, sites=SITES).fetch(http, state))
     assert len(http.calls) == 1 and len(items) == 1
     assert items[0].title == "Can't sync" and items[0].author == "7"
     assert state.get(f"fromdate:{SITES[0]}") == "1791300001"
@@ -93,7 +93,7 @@ def test_stops_cleanly_on_throttle_violation():
            "error_message": "too many requests from this IP"}
     http = FakeHttp([err], status=400)
     state = State({f"fromdate:{SITES[0]}": SINCE})
-    assert list(StackExchange(max_items=30).fetch(http, state)) == []
+    assert list(StackExchange(max_items=30, sites=SITES).fetch(http, state)) == []
     assert state.get(f"fromdate:{SITES[0]}") == SINCE
     assert "throttle_violation" in state.get("stopped")
 
@@ -101,4 +101,4 @@ def test_stops_cleanly_on_throttle_violation():
 def test_schema_drift_fails_loudly():
     http = FakeHttp([{"items": [], "quota_remaining": 100}])  # no has_more
     with pytest.raises(SchemaDrift):
-        list(StackExchange(max_items=30).fetch(http, State({})))
+        list(StackExchange(max_items=30, sites=SITES).fetch(http, State({})))

@@ -74,7 +74,7 @@ def prompt_row(conn: sqlite3.Connection) -> tuple[int, str, str]:
 
 
 def _candidates(conn, prompt_id: int, limit: int, sources: list[str] | None,
-                reextract: bool = False) -> list[sqlite3.Row]:
+                reextract: bool = False, item_ids: list[int] | None = None) -> list[sqlite3.Row]:
     """Unextracted items: no-retain ones first (they must be processed before scrubbing),
     then round-robin across sources, newest first within each.
 
@@ -89,6 +89,9 @@ def _candidates(conn, prompt_id: int, limit: int, sources: list[str] | None,
     if sources:
         q += f" AND r.source IN ({','.join('?' * len(sources))})"
         args += sources
+    if item_ids is not None:
+        q += " AND r.id IN (SELECT value FROM json_each(?))"
+        args.append(json.dumps(item_ids))
     q += " ORDER BY r.retain_text ASC, COALESCE(r.created_at, r.fetched_at) DESC"
     rows = conn.execute(q, args).fetchall()
     urgent = [r for r in rows if not r["retain_text"]]
@@ -214,7 +217,8 @@ def _store_answers(conn, run_id, prompt_id, res, batch, texts, stats) -> None:
 
 def extract(conn: sqlite3.Connection, runtime: Runtime | None = None, max_items: int = 400,
             batch_size: int = 20, workers: int = 3, sources: list[str] | None = None,
-            model: str = DEFAULT_MODEL, reextract: bool = False) -> dict:
+            model: str = DEFAULT_MODEL, reextract: bool = False,
+            item_ids: list[int] | None = None) -> dict:
     """Extract pains from candidate items.
 
     A batch that fails with LLMError is split in half and each half retried once in the
@@ -223,7 +227,7 @@ def extract(conn: sqlite3.Connection, runtime: Runtime | None = None, max_items:
     and re-raises.
     """
     prompt_id, version, system = prompt_row(conn)
-    items = _candidates(conn, prompt_id, max_items, sources, reextract)
+    items = _candidates(conn, prompt_id, max_items, sources, reextract, item_ids)
     stats = defaultdict(float)
     with runs.run(conn, "extract", note=f"prompt {version}, {len(items)} items") as run_id:
         texts = {r["id"]: plain_text(r["body"]) for r in items}
@@ -341,9 +345,14 @@ def scrub(conn: sqlite3.Connection) -> int:
 def cmd_extract(args) -> int:
     conn = db.connect()
     db.migrate(conn)
+    item_ids = None
+    if args.labeled:
+        # Working-set labels only: agents may run this, and the other set stays unread.
+        from pipeline.evals import labels_path, load_labels
+        item_ids = sorted(load_labels(labels_path("working")))
     stats = extract(conn, max_items=args.max_items, batch_size=args.batch_size,
                     workers=args.workers, sources=args.source, model=args.model,
-                    reextract=args.reextract)
+                    reextract=args.reextract, item_ids=item_ids)
     print(json.dumps(stats, indent=1))
     scrubbed = scrub(conn)
     if scrubbed:
@@ -365,6 +374,8 @@ def register_cli(sub) -> None:
     p.add_argument("--workers", type=int, default=3)
     p.add_argument("--source", nargs="+", help="only these sources")
     p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--labeled", action="store_true",
+                   help="only items in the working eval set (to score extraction against labels)")
     p.add_argument("--reextract", action="store_true",
                    help="also re-extract items that lack an extraction under the current"
                         " prompt (default: only items never extracted)")

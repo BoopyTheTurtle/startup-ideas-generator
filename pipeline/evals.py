@@ -262,6 +262,11 @@ def cmd_eval_status(args) -> int:
           + ("" if prompt_id is not None else " (no extractions yet)"))
     for set_name in SETS:
         labels = load_labels(labels_path(set_name))
+        if set_name != "working":
+            # Agents run this command, so the held-out set shows only its size: label mix
+            # or per-source counts would leak what it contains.
+            print(f"\n{set_name}: {len(labels)} labeled")
+            continue
         counts = {k: 0 for k in LABELS}
         per_source: dict[str, int] = {}
         missing = 0

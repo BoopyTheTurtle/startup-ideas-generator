@@ -327,6 +327,9 @@ users, paid data sources.
    2026-10-13: private analysis only, no training, no republishing of their text.
 6. **Weekly run:** Mondays at 10:00 via Task Scheduler; forums poll daily at 09:00,
    because their feeds turn over within hours. The 9 seed forums are confirmed.
+8. **Source review, 2026-10-13** (Edgar's labels): GOV.UK and EU Have Your Say stop as
+   streams and serve on-demand "why now" lookups; Stack Exchange narrows to diy and
+   webapps. Stage 1's table lists what was built; `default_on` decides what runs.
 7. **Sources whose terms forbid reproduction** (e.g. Futura-Sciences) may run with
    `retain_text = false`: extraction runs in the same pass and only derived fields plus
    the URL are stored. Their evidence counts as paraphrase, weaker than a verbatim quote.

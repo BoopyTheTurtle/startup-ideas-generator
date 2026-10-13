@@ -298,3 +298,11 @@ def test_bad_fields_are_dropped(conn):
     ]})
     stats = extract(conn, fake)
     assert stats["problems_dropped"] == 3 and stats["problems_kept"] == 0
+
+
+def test_item_ids_restrict_candidates(conn):
+    a = add_item(conn, "a", LONG)
+    add_item(conn, "b", LONG + " Twice.")
+    fake = Fake(lambda i: {"id": i["id"], "is_pain": False, "problems": []})
+    extract(conn, fake, item_ids=[a])
+    assert [p["id"] for p in fake.calls[0]] == [a]

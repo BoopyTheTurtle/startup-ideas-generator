@@ -55,6 +55,11 @@ MAX_PAGE_SIZE = 100
 QUOTA_FLOOR = 10  # stop before the daily quota runs out; leave room for manual checks
 
 
+# Sites collected by default. Edgar's 2026-10-13 labels: 3 of 25 Stack Exchange items were
+# pain, all from diy and webapps; the other sites scored 0 (STATUS.md source review).
+ACTIVE_SITES = ["diy", "webapps"]
+
+
 class StackExchange(Collector):
     name = "stackexchange"
     license = "CC-BY-SA-4.0"
@@ -62,14 +67,18 @@ class StackExchange(Collector):
     regions = ["GLOBAL"]
     min_interval = 1.0
 
+    def __init__(self, max_items: int = 500, sites: list[str] | None = None):
+        super().__init__(max_items)
+        self.sites = sites or ACTIVE_SITES
+
     def fetch(self, http: Http, state: State) -> Iterator[Item]:
         now = int(datetime.now(timezone.utc).timestamp())
-        per_site = max(1, self.max_items // len(SITES))
+        per_site = max(1, self.max_items // len(self.sites))
         page_size = min(MAX_PAGE_SIZE, per_site)  # constant per site: the API pages by offset
         yielded = 0
         backoff = 0.0
         state.set("stopped", "")  # set below when quota or throttling ends the run early
-        for site in SITES:
+        for site in self.sites:
             key = f"fromdate:{site}"
             since = int(state.get(key, str(now - FIRST_RUN_LOOKBACK_S)))
             newest = since - 1

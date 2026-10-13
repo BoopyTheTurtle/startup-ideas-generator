@@ -180,7 +180,7 @@ def collect(conn: sqlite3.Connection, only: list[str] | None = None,
         raise SystemExit(f"unknown collectors: {sorted(unknown)}; have {sorted(available)}")
     # Restricted sources (terms or robots.txt forbid collection) run only when named.
     chosen = {k: v for k, v in available.items()
-              if (k in only if only else v.tos_class != "restricted")
+              if (k in only if only else v.tos_class != "restricted" and v.default_on)
               and k not in (skip or [])}
     results = []
     with runs.run(conn, "collect", note=",".join(chosen)) as run_id:

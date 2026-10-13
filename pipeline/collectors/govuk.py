@@ -82,6 +82,9 @@ class GovUk(Collector):
     name = "govuk"
     license = "OGL-3.0"
     tos_class = "clean"
+    # Off as a weekly stream since 2026-10-13 (0 of 33 labeled items were pain); kept for on-demand
+    # "why now" lookups via `collect --only`.
+    default_on = False
     regions = ["GB"]
     min_interval = 0.5
 
