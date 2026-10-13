@@ -40,6 +40,9 @@ class Item:
     # Per-item overrides for collectors whose items come from several sites (forums).
     license: str | None = None
     tos_class: str | None = None
+    # False for sources whose terms forbid reproduction: the body is blanked after
+    # extraction, and only derived fields plus the URL remain (SPEC decision 7).
+    retain_text: bool = True
 
 
 class State:

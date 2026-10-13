@@ -1,6 +1,7 @@
 """Command line: uv run python -m pipeline <command>."""
 
 import argparse
+import importlib
 import sys
 
 from pipeline import db, runs
@@ -56,6 +57,10 @@ def cmd_health(args) -> int:
     return 0
 
 
+# Modules exposing register_cli(subparsers). Add a module here once it exists.
+PLUGINS: list[str] = []
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="pipeline")
     sub = p.add_subparsers(dest="command", required=True)
@@ -72,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--max-items", type=int, default=500, help="cap per collector per run")
     c.set_defaults(fn=cmd_collect)
     sub.add_parser("health", help="collector health").set_defaults(fn=cmd_health)
+    # Stage modules add their own commands, so parallel work never edits this file.
+    for module in PLUGINS:
+        importlib.import_module(f"pipeline.{module}").register_cli(sub)
     args = p.parse_args(argv)
     return args.fn(args)
 

@@ -96,13 +96,14 @@ def run_collector(conn: sqlite3.Connection, run_id: int, cls: type[Collector],
             cur = conn.execute(
                 "INSERT OR IGNORE INTO raw_item (source, source_id, url, author_hash,"
                 " created_at, title, body, lang, country, metrics_json, extra_json,"
-                " content_hash, license, tos_class, run_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " content_hash, license, tos_class, run_id, retain_text)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (src, str(item.source_id), item.url, ah, item.created_at, item.title,
                  item.body, item.lang, item.country,
                  json.dumps(item.metrics, ensure_ascii=False),
                  json.dumps(item.extra, ensure_ascii=False), content_hash(item),
-                 item.license or cls.license, item.tos_class or cls.tos_class, run_id),
+                 item.license or cls.license, item.tos_class or cls.tos_class, run_id,
+                 int(item.retain_text)),
             )
             if cur.rowcount:
                 new += 1
