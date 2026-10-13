@@ -2,17 +2,25 @@
 
 One mapping run (a `run` row of kind 'map'):
 
-1. Embed pains that lack a vector (unless the caller already did).
-2. Assign each unassigned pain to the nearest non-merged problem centroid when cosine
-   similarity reaches ASSIGN_THRESHOLD.
-3. Cluster the remaining pool (this run's leftovers plus every earlier run's) with
+1. Embed active pains that lack a vector (unless the caller already did). A pain is
+   active when it belongs to its item's extraction under the current extract prompt, or
+   to its latest extraction (pipeline.embed.ACTIVE_PAIN_SQL).
+2. Read everything else in one read snapshot, compute the run in memory, and write the
+   result in one short transaction, so HDBSCAN never holds the write lock.
+3. Carry membership across re-extraction: an unassigned pain whose item had a superseded
+   pain in a problem joins that problem (assigned_by 'carried', keeping the original
+   assigned_run_id), so re-extraction neither moves members nor counts as new mentions.
+4. Assign each remaining unassigned pain to the nearest non-merged problem centroid when
+   cosine similarity reaches ASSIGN_THRESHOLD.
+5. Cluster the remaining pool (this run's leftovers plus every earlier run's) with
    HDBSCAN. A cohesive cluster whose centroid already clears ASSIGN_THRESHOLD against an
    existing problem folds into it; otherwise it becomes a new problem when it has at
    least MIN_AUTHORS distinct authors.
-4. Recompute the centroid of every problem that gained members, then give the rest of
-   the pool one more centroid pass (so pains matching a problem born this run join now).
-5. Queue near-duplicate problem pairs for Edgar's merge decision.
-6. Write one snapshot row per non-merged problem and log metrics.
+6. A centroid is the mean of its problem's active members, so problems that gained or
+   lost members move. Then the pool gets one more centroid pass (so pains matching a
+   problem born this run join now).
+7. Queue near-duplicate problem pairs for Edgar's merge decision.
+8. Write one snapshot row per non-merged problem and log metrics.
 
 Identity matters more than the algorithm (docs/research/04): problems persist across
 runs, members never move except by an explicit merge, and nothing is deleted.
@@ -25,7 +33,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -52,7 +60,7 @@ MIN_AUTHORS = 3             # distinct authors a cluster needs to become a probl
 # Pains in effect, with what snapshots and the author rule need. An item without an
 # author hash counts as its own author ("item:<id>"), so citizens' feedback still counts.
 _PAIN_INFO_SQL = f"""
-    SELECT a.id AS pain_id, a.problem, a.quote, r.id AS raw_item_id, r.source, r.country,
+    SELECT a.id AS pain_id, a.idx, a.problem, a.quote, r.id AS raw_item_id, r.source, r.country,
            COALESCE(r.author_hash, 'item:' || r.id) AS author_key
     FROM ({ACTIVE_PAIN_SQL}) a
     JOIN extraction x ON x.id = a.extraction_id
@@ -64,6 +72,7 @@ _PAIN_INFO_SQL = f"""
 class MapResult:
     run_id: int
     embedded: int = 0
+    carried: int = 0
     assigned_centroid: int = 0
     assigned_cluster: int = 0
     clusters_found: int = 0
@@ -77,28 +86,6 @@ class MapResult:
 
 # --- Vectors --------------------------------------------------------------------------
 
-def _centroids(conn: sqlite3.Connection, model: str) -> tuple[list[int], np.ndarray]:
-    rows = conn.execute(
-        "SELECT id, centroid FROM problem WHERE status != 'merged' AND centroid IS NOT NULL"
-        " AND centroid_model = ? ORDER BY id", (model,),
-    ).fetchall()
-    if not rows:
-        return [], np.zeros((0, 0), dtype=np.float32)
-    return [r["id"] for r in rows], np.vstack([from_blob(r["centroid"]) for r in rows])
-
-
-def _unassigned(conn: sqlite3.Connection, model: str) -> tuple[list[int], np.ndarray]:
-    rows = conn.execute(
-        f"SELECT a.id, e.vec FROM ({ACTIVE_PAIN_SQL}) a"
-        " JOIN embedding e ON e.pain_id = a.id AND e.model = ?"
-        " LEFT JOIN problem_member m ON m.pain_id = a.id"
-        " WHERE m.pain_id IS NULL ORDER BY a.id", (model,),
-    ).fetchall()
-    if not rows:
-        return [], np.zeros((0, 0), dtype=np.float32)
-    return [r["id"] for r in rows], np.vstack([from_blob(r["vec"]) for r in rows])
-
-
 def recompute_centroid(conn: sqlite3.Connection, problem_id: int, model: str) -> bool:
     """Set a problem's centroid to the renormalized mean of its active members' vectors.
 
@@ -107,7 +94,7 @@ def recompute_centroid(conn: sqlite3.Connection, problem_id: int, model: str) ->
     rows = conn.execute(
         f"SELECT e.vec FROM problem_member m JOIN ({ACTIVE_PAIN_SQL}) a ON a.id = m.pain_id"
         " JOIN embedding e ON e.pain_id = m.pain_id AND e.model = ?"
-        " WHERE m.problem_id = ?", (model, problem_id),
+        " WHERE m.problem_id = ? ORDER BY m.pain_id", (model, problem_id),
     ).fetchall()
     if not rows:
         return False
@@ -118,16 +105,6 @@ def recompute_centroid(conn: sqlite3.Connection, problem_id: int, model: str) ->
         (to_blob(centroid), model, problem_id),
     )
     return True
-
-
-def _refresh_stale_centroids(conn: sqlite3.Connection, model: str) -> None:
-    """Problems whose centroid came from another model (or none) get one from this model."""
-    stale = conn.execute(
-        "SELECT id FROM problem WHERE status != 'merged'"
-        " AND (centroid IS NULL OR centroid_model IS NOT ?)", (model,),
-    ).fetchall()
-    for r in stale:
-        recompute_centroid(conn, r["id"], model)
 
 
 def _candidate_groups(vectors: np.ndarray) -> list[np.ndarray]:
@@ -168,12 +145,257 @@ def _trim(vectors: np.ndarray, idx: np.ndarray) -> np.ndarray:
     return idx
 
 
-def _insert_members(conn, run_id: int, problem_id: int, pain_ids, sims, by: str) -> None:
-    conn.executemany(
-        "INSERT INTO problem_member (pain_id, problem_id, similarity, assigned_run_id, assigned_by)"
-        " VALUES (?, ?, ?, ?, ?)",
-        [(int(p), problem_id, float(s), run_id, by) for p, s in zip(pain_ids, sims)],
-    )
+# --- Read: one snapshot of what the run needs ----------------------------------------
+
+@dataclass
+class _Pred:
+    """A superseded pain that was a problem member; its item's new pain inherits it."""
+    pain_id: int
+    extraction_id: int
+    idx: int
+    problem_id: int             # alias-resolved
+    assigned_run_id: int
+    similarity: float
+    vec: np.ndarray | None      # None when it has no vector for this run's model
+
+
+@dataclass
+class _Inputs:
+    model: str
+    ids: list[int]                       # active pains with a vector for the model
+    X: np.ndarray                        # their vectors; row i belongs to ids[i]
+    idx: list[int]                       # each pain's position within its item
+    item: list[int]                      # raw item id
+    author: list[str]
+    text: list[str]                      # problem sentence, a new problem's first title
+    target: list[int | None]             # problem it belongs to; None while in the pool
+    stored: dict[int, tuple[bytes | None, str | None]]  # non-merged problem: centroid, model
+    preds: dict[int, list[_Pred]] = field(default_factory=dict)  # raw item: superseded members
+
+
+def _read(conn: sqlite3.Connection, model: str) -> _Inputs:
+    """Load the run's inputs inside one read transaction (WAL readers block no writer)."""
+    conn.execute("BEGIN")
+    try:
+        rows = conn.execute(
+            f"SELECT i.pain_id, i.idx, i.raw_item_id, i.author_key, i.problem, e.vec, m.problem_id"
+            f" FROM ({_PAIN_INFO_SQL}) i"
+            " JOIN embedding e ON e.pain_id = i.pain_id AND e.model = ?"
+            " LEFT JOIN problem_member m ON m.pain_id = i.pain_id"
+            " ORDER BY i.pain_id", (model,),
+        ).fetchall()
+        stored = {r["id"]: (r["centroid"], r["centroid_model"]) for r in conn.execute(
+            "SELECT id, centroid, centroid_model FROM problem WHERE status != 'merged'")}
+        inp = _Inputs(
+            model=model, ids=[r["pain_id"] for r in rows],
+            X=(np.vstack([from_blob(r["vec"]) for r in rows]) if rows
+               else np.zeros((0, 0), dtype=np.float32)),
+            idx=[r["idx"] for r in rows], item=[r["raw_item_id"] for r in rows],
+            author=[r["author_key"] for r in rows], text=[r["problem"] for r in rows],
+            target=[r["problem_id"] for r in rows], stored=stored,
+        )
+        pool_items = {it for it, t in zip(inp.item, inp.target) if t is None}
+        if pool_items:
+            # Superseded member pains of items with a pain in the pool. Per item, only the
+            # latest extraction that had members counts.
+            for r in conn.execute(
+                    "SELECT p.id, p.idx, p.extraction_id, x.raw_item_id, m.problem_id,"
+                    " m.assigned_run_id, m.similarity, e.vec"
+                    " FROM problem_member m JOIN pain p ON p.id = m.pain_id"
+                    " JOIN extraction x ON x.id = p.extraction_id"
+                    " LEFT JOIN embedding e ON e.pain_id = p.id AND e.model = ?"
+                    f" WHERE p.id NOT IN (SELECT id FROM ({ACTIVE_PAIN_SQL}))"
+                    " ORDER BY x.raw_item_id, p.extraction_id DESC, p.idx", (model,)):
+                if r["raw_item_id"] not in pool_items:
+                    continue
+                group = inp.preds.setdefault(r["raw_item_id"], [])
+                if group and group[0].extraction_id != r["extraction_id"]:
+                    continue  # an older extraction of the same item
+                group.append(_Pred(
+                    r["id"], r["extraction_id"], r["idx"], resolve(conn, r["problem_id"]),
+                    r["assigned_run_id"], r["similarity"],
+                    from_blob(r["vec"]) if r["vec"] is not None else None))
+        return inp
+    finally:
+        conn.rollback()  # ends the read transaction; nothing was written
+
+
+# --- Compute: the whole run in memory -------------------------------------------------
+
+@dataclass
+class _Plan:
+    # (pain_id, problem, similarity, assigned_run_id or None for this run, assigned_by).
+    # A problem id below zero stands for a problem this run creates.
+    members: list[tuple[int, int, float, int | None, str]] = field(default_factory=list)
+    new: dict[int, str] = field(default_factory=dict)            # placeholder id: title
+    centroids: dict[int, np.ndarray] = field(default_factory=dict)
+
+
+def _match(rows: list[int], preds: list[_Pred], inp: _Inputs) -> list[tuple[int, _Pred]]:
+    """Pair an item's new pains with its superseded member pains, one to one.
+
+    Equal idx first; the rest by highest cosine similarity (pairs lacking a vector last).
+    """
+    rows, preds = list(rows), list(preds)
+    pairs = []
+    for p in list(preds):
+        r = next((r for r in rows if inp.idx[r] == p.idx), None)
+        if r is not None:
+            pairs.append((r, p))
+            rows.remove(r)
+            preds.remove(p)
+    ranked = sorted(
+        (-float(inp.X[r] @ p.vec) if p.vec is not None else 2.0, inp.idx[r], p.idx, r, k)
+        for r in rows for k, p in enumerate(preds))
+    used_rows, used_preds = set(), set()
+    for *_, r, k in ranked:
+        if r not in used_rows and k not in used_preds:
+            pairs.append((r, preds[k]))
+            used_rows.add(r)
+            used_preds.add(k)
+    return pairs
+
+
+def _plan(inp: _Inputs, res: MapResult) -> _Plan:
+    plan = _Plan()
+    target = list(inp.target)
+    rows_of: dict[int, list[int]] = {}
+    for i, t in enumerate(target):
+        if t is not None:
+            rows_of.setdefault(t, []).append(i)
+    C = plan.centroids  # problem -> current centroid; only problems with one take part
+
+    def refresh(t: int) -> None:
+        if (t < 0 or t in inp.stored) and rows_of.get(t):
+            C[t] = normalize(inp.X[rows_of[t]].mean(axis=0))
+
+    def join(i: int, t: int, sim: float, run: int | None, by: str) -> None:
+        target[i] = t
+        rows_of.setdefault(t, []).append(i)
+        plan.members.append((inp.ids[i], t, float(sim), run, by))
+
+    def ordered() -> list[int]:  # existing problems by id, then this run's in birth order
+        return sorted(C, key=lambda t: (t < 0, abs(t)))
+
+    def assign_pass() -> set[int]:
+        pids, todo = ordered(), [i for i, t in enumerate(target) if t is None]
+        if not pids or not todo:
+            return set()
+        sims = inp.X[todo] @ np.vstack([C[p] for p in pids]).T
+        best = sims.argmax(axis=1)
+        best_sim = sims[np.arange(len(todo)), best]
+        hits = np.flatnonzero(best_sim >= ASSIGN_THRESHOLD)
+        for k in hits:
+            join(todo[k], pids[best[k]], best_sim[k], None, "centroid")
+        res.assigned_centroid += len(hits)
+        return {pids[best[k]] for k in hits}
+
+    # Centroids follow the active members, so a problem whose members were superseded
+    # moves too. A problem with no active member vector keeps its stored centroid.
+    for pid, (blob, model) in inp.stored.items():
+        if rows_of.get(pid):
+            refresh(pid)
+        elif blob is not None and model == inp.model:
+            C[pid] = from_blob(blob)
+
+    # a. Carry membership across re-extraction.
+    by_item: dict[int, list[int]] = {}
+    for i, t in enumerate(target):
+        if t is None and inp.item[i] in inp.preds:
+            by_item.setdefault(inp.item[i], []).append(i)
+    carried: set[int] = set()
+    for item, rows in by_item.items():
+        for i, pred in _match(rows, inp.preds[item], inp):
+            if pred.problem_id not in inp.stored:
+                continue
+            sim = float(inp.X[i] @ C[pred.problem_id]) if pred.problem_id in C else pred.similarity
+            join(i, pred.problem_id, sim, pred.assigned_run_id, "carried")
+            carried.add(pred.problem_id)
+            res.carried += 1
+    for t in carried:
+        refresh(t)
+
+    # b. Nearest centroid.
+    gained = assign_pass()
+    for t in gained:
+        refresh(t)
+
+    # c. Cluster the pool; cohesive clusters fold into a problem or found a new one.
+    pids = ordered()
+    M = np.vstack([C[p] for p in pids]) if pids else None
+    where = [i for i, t in enumerate(target) if t is None]
+    P = inp.X[where] if where else np.zeros((0, 0), dtype=np.float32)
+    for idx in _candidate_groups(P):
+        res.clusters_found += 1
+        idx = _trim(P, idx)  # loose members go back to the pool
+        if len(idx) < MIN_CLUSTER_SIZE:
+            res.clusters_rejected += 1
+            continue
+        centroid = normalize(P[idx].mean(axis=0))
+        rows = [where[k] for k in idx]
+        t, sims = None, P[idx] @ centroid
+        if M is not None:  # the cluster as a whole may match a problem no single member reached
+            to_existing = M @ centroid
+            j = int(to_existing.argmax())
+            if to_existing[j] >= ASSIGN_THRESHOLD:
+                t, sims = pids[j], P[idx] @ M[j]
+                res.clusters_folded += 1
+        if t is None:
+            if len({inp.author[r] for r in rows}) < MIN_AUTHORS:
+                res.clusters_rejected += 1
+                continue
+            t = -(len(plan.new) + 1)
+            plan.new[t] = inp.text[rows[int(sims.argmax())]]  # until the curator renames it
+            C[t] = centroid
+            res.new_problems += 1
+        for r, s in zip(rows, sims):
+            join(r, t, s, None, "cluster")
+        gained.add(t)
+        res.assigned_cluster += len(rows)
+
+    # d. Centroids follow their members. Then one more centroid pass, so pool pains that
+    # match a problem born this run join it now rather than at the next run.
+    for t in gained:
+        refresh(t)
+    for t in assign_pass():
+        refresh(t)
+    res.pool_size_after = sum(t is None for t in target)
+    return plan
+
+
+# --- Write: one short transaction ------------------------------------------------------
+
+def _write(conn: sqlite3.Connection, run_id: int, inp: _Inputs, plan: _Plan,
+           res: MapResult) -> None:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        real: dict[int, int] = {}
+        for t, title in plan.new.items():
+            real[t] = conn.execute(
+                "INSERT INTO problem (title, title_source, centroid, centroid_model, created_run_id)"
+                " VALUES (?, 'auto', ?, ?, ?)",
+                (title, to_blob(plan.centroids[t]), inp.model, run_id)).lastrowid
+        conn.executemany(
+            "INSERT INTO problem_member (pain_id, problem_id, similarity, assigned_run_id, assigned_by)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [(p, real.get(t, t), s, run_id if r is None else r, by)
+             for p, t, s, r, by in plan.members])
+        for t, c in plan.centroids.items():
+            if t > 0 and inp.stored[t] != (to_blob(c), inp.model):
+                conn.execute(
+                    "UPDATE problem SET centroid = ?, centroid_model = ?,"
+                    " updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+                    (to_blob(c), inp.model, t))
+        final = sorted(((real.get(t, t), c) for t, c in plan.centroids.items()), key=lambda x: x[0])
+        _queue_merges(conn, run_id, [p for p, _ in final],
+                      np.vstack([c for _, c in final]) if final else np.zeros((0, 0)))
+        res.merge_candidates_open = conn.execute(
+            "SELECT COUNT(*) FROM merge_candidate WHERE status = 'open'").fetchone()[0]
+        res.problems_total = _snapshot(conn, run_id)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 # --- The run --------------------------------------------------------------------------
@@ -186,104 +408,21 @@ def map_run(conn: sqlite3.Connection, embedder: Embedder | None = None,
         res = MapResult(run_id)
         if embedder is not None:
             res.embedded = embed_pending(conn, embedder)
-        with conn:  # every mapping write lands together, or not at all
-            _map(conn, run_id, model, res)
+        inp = _read(conn, model)
+        plan = _plan(inp, res)            # HDBSCAN runs here, outside any transaction
+        _write(conn, run_id, inp, plan, res)  # every mapping write lands together, or none
         _log_metrics(conn, run_id, res)
     return res
 
 
-def _assign_to_centroids(conn, run_id: int, model: str, ids: list[int], X: np.ndarray,
-                         pool: np.ndarray, gained: set[int]) -> int:
-    """Assign pool pains whose nearest centroid clears ASSIGN_THRESHOLD; update `pool`."""
-    pids, C = _centroids(conn, model)
-    todo = np.flatnonzero(pool)
-    if not pids or not len(todo):
-        return 0
-    sims = X[todo] @ C.T
-    best = sims.argmax(axis=1)
-    best_sim = sims[np.arange(len(todo)), best]
-    hits = np.flatnonzero(best_sim >= ASSIGN_THRESHOLD)
-    for k in hits:
-        pid = pids[best[k]]
-        _insert_members(conn, run_id, pid, [ids[todo[k]]], [best_sim[k]], "centroid")
-        gained.add(pid)
-        pool[todo[k]] = False
-    return len(hits)
-
-
-def _map(conn: sqlite3.Connection, run_id: int, model: str, res: MapResult) -> None:
-    _refresh_stale_centroids(conn, model)
-    ids, X = _unassigned(conn, model)
-    pool = np.ones(len(ids), dtype=bool)  # True while a pain is unassigned
-    gained: set[int] = set()
-
-    # a. Nearest centroid.
-    res.assigned_centroid = _assign_to_centroids(conn, run_id, model, ids, X, pool, gained)
-
-    # b, c. Cluster the pool; cohesive clusters fold into a problem or found a new one.
-    pids, C = _centroids(conn, model)
-    where = np.flatnonzero(pool)
-    P = X[where] if len(where) else np.zeros((0, 0), dtype=np.float32)
-    pool_ids = [ids[i] for i in where]
-    authors, texts = {}, {}
-    if pool_ids:
-        marks = ",".join("?" * len(pool_ids))
-        for r in conn.execute(f"SELECT * FROM ({_PAIN_INFO_SQL}) WHERE pain_id IN ({marks})", pool_ids):
-            authors[r["pain_id"]], texts[r["pain_id"]] = r["author_key"], r["problem"]
-    for idx in _candidate_groups(P):
-        res.clusters_found += 1
-        idx = _trim(P, idx)  # loose members go back to the pool
-        if len(idx) < MIN_CLUSTER_SIZE:
-            res.clusters_rejected += 1
-            continue
-        centroid = normalize(P[idx].mean(axis=0))
-        members = [pool_ids[i] for i in idx]
-        target, sims = None, P[idx] @ centroid
-        if pids:  # the cluster as a whole may match a problem that no single member reached
-            to_existing = C @ centroid
-            j = int(to_existing.argmax())
-            if to_existing[j] >= ASSIGN_THRESHOLD:
-                target, sims = pids[j], P[idx] @ C[j]
-                res.clusters_folded += 1
-        if target is None:
-            if len({authors[p] for p in members}) < MIN_AUTHORS:
-                res.clusters_rejected += 1
-                continue
-            title = texts[members[int(sims.argmax())]]  # until the curator renames it
-            target = conn.execute(
-                "INSERT INTO problem (title, title_source, centroid, centroid_model, created_run_id)"
-                " VALUES (?, 'auto', ?, ?, ?)", (title, to_blob(centroid), model, run_id),
-            ).lastrowid
-            res.new_problems += 1
-        _insert_members(conn, run_id, target, members, sims, "cluster")
-        gained.add(target)
-        pool[where[idx]] = False
-        res.assigned_cluster += len(members)
-
-    # d. Centroids follow their members. Then one more centroid pass, so pool pains that
-    # match a problem born this run join it now rather than at the next run.
-    for pid in sorted(gained):
-        recompute_centroid(conn, pid, model)
-    late: set[int] = set()
-    res.assigned_centroid += _assign_to_centroids(conn, run_id, model, ids, X, pool, late)
-    for pid in sorted(late):
-        recompute_centroid(conn, pid, model)
-
-    res.pool_size_after = int(pool.sum())
-    _queue_merges(conn, run_id, model)
-    res.merge_candidates_open = conn.execute(
-        "SELECT COUNT(*) FROM merge_candidate WHERE status = 'open'").fetchone()[0]
-    res.problems_total = _snapshot(conn, run_id)
-
-
-def _queue_merges(conn: sqlite3.Connection, run_id: int, model: str) -> None:
+def _queue_merges(conn: sqlite3.Connection, run_id: int, pids: list[int], C: np.ndarray) -> None:
     """Upsert open merge candidates for close problem pairs; drop stale open ones.
 
-    Pairs at or above ASSIGN_THRESHOLD are queued too: they arise when centroids drift
-    together or two clusters form in one run, and they are the likeliest duplicates.
-    Decided pairs (merged, rejected) are never reopened.
+    `pids` must ascend (a_id < b_id); row i of C is the centroid of pids[i]. Pairs at or
+    above ASSIGN_THRESHOLD are queued too: they arise when centroids drift together or
+    two clusters form in one run, and they are the likeliest duplicates. Decided pairs
+    (merged, rejected) are never reopened.
     """
-    pids, C = _centroids(conn, model)
     current: set[tuple[int, int]] = set()
     for start in range(0, len(pids), 1000):  # blocks keep the similarity matrix small
         block = C[start:start + 1000] @ C.T
@@ -306,7 +445,13 @@ def _queue_merges(conn: sqlite3.Connection, run_id: int, model: str) -> None:
 
 
 def problem_stats(conn: sqlite3.Connection, run_id: int | None = None) -> dict[int, dict]:
-    """Per non-merged problem: mentions, distinct authors, sources, countries, new mentions."""
+    """Per non-merged problem: mentions, distinct authors, sources, countries, new mentions.
+
+    Every count covers ACTIVE member pains only (ACTIVE_PAIN_SQL): a pain superseded by
+    re-extraction drops out, and its carried successor takes its place. `mentions` is the
+    number of active members; `new_mentions` those assigned in `run_id` (carried members
+    keep their original run, so re-extraction never shows up as new demand).
+    """
     stats = {r["id"]: dict(mentions=0, distinct_authors=0, sources=0, countries=0, new_mentions=0)
              for r in conn.execute("SELECT id FROM problem WHERE status != 'merged'")}
     rows = conn.execute(
@@ -325,6 +470,7 @@ def problem_stats(conn: sqlite3.Connection, run_id: int | None = None) -> dict[i
 
 
 def _snapshot(conn: sqlite3.Connection, run_id: int) -> int:
+    """One row per non-merged problem; mentions = active member pains (see problem_stats)."""
     stats = problem_stats(conn, run_id)
     conn.executemany(
         "INSERT OR REPLACE INTO snapshot (run_id, problem_id, mentions, distinct_authors,"
@@ -336,8 +482,8 @@ def _snapshot(conn: sqlite3.Connection, run_id: int) -> int:
 
 
 def _log_metrics(conn: sqlite3.Connection, run_id: int, res: MapResult) -> None:
-    for name in ("pains_assigned_centroid", "pains_assigned_cluster", "pool_size_after",
-                 "new_problems", "merge_candidates_open", "problems_total",
+    for name in ("pains_carried", "pains_assigned_centroid", "pains_assigned_cluster",
+                 "pool_size_after", "new_problems", "merge_candidates_open", "problems_total",
                  "clusters_found", "clusters_folded", "clusters_rejected"):
         runs.log_metric(conn, run_id, "mapping", name, getattr(res, name.replace("pains_", "")))
     runs.log_metric(conn, run_id, "mapping", "pains_embedded", res.embedded)
@@ -405,7 +551,8 @@ def cmd_map(args) -> int:
     conn = db.connect()
     db.migrate(conn)
     r = map_run(conn, embedder=None if args.no_embed else E5Embedder())
-    print(f"map run {r.run_id}: embedded {r.embedded}, assigned {r.assigned_centroid} by centroid"
+    print(f"map run {r.run_id}: embedded {r.embedded}, carried {r.carried} across re-extraction,"
+          f" assigned {r.assigned_centroid} by centroid"
           f" + {r.assigned_cluster} by cluster; {r.new_problems} new problems"
           f" ({r.clusters_found} clusters, {r.clusters_folded} folded, {r.clusters_rejected} rejected);"
           f" pool {r.pool_size_after}; {r.problems_total} problems; {r.merge_candidates_open} merge candidates open")

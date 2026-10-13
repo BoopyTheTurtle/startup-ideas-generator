@@ -68,3 +68,20 @@ def test_e5_uses_query_prefix_without_loading_a_model():
     assert e._model.texts == ["query: a — b"]
     assert e._model.kw["normalize_embeddings"] is True
     assert out.shape == (1, 384) and out.dtype == np.float32
+
+
+def test_current_prompt_beats_newer_extractions(f, monkeypatch):
+    item = f.item()
+    old = f.pain(axis(0), extraction_id=f.extraction(item))      # prompt v1
+    f.pain(axis(1), extraction_id=f.extraction(item, f.new_prompt("v2")))
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v1")
+    assert embed.embed_pending(f.conn, f.embedder) == 1
+    assert [r[0] for r in f.conn.execute("SELECT pain_id FROM embedding")] == [old]
+
+
+def test_current_extract_version_matches_prompt_row(f):
+    from pipeline.extract import prompt_row
+    _, version, _ = prompt_row(f.conn)
+    assert embed.current_extract_version() == version
+    # And the SQL function every db.connect connection carries agrees.
+    assert f.conn.execute("SELECT current_extract_version()").fetchone()[0] == version

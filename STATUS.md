@@ -28,19 +28,21 @@ on top. Keep "Current state" accurate; append to "Log".
 | firefox_addons | live | gray | AMO ratings ≤ 3 stars; fixtures local-only; few hundred items/run max |
 | forums (generic) | live, 9 forums | per forum | 170 items; every feed returned its full window, so weekly runs miss most posts; Futura-Sciences (gray) off |
 
-**In progress (Phase 2)**
+**Phase 2 state**
 
-- Built and committed: extraction (`pipeline.extract`, headless `claude -p`,
-  claude-haiku-5-5), extract-and-discard (Futura-Sciences), mapping (`pipeline.embed`,
-  `pipeline.mapping`; multilingual-e5-small; thresholds 0.94 assign / 0.91 merge after e5
-  compressed similarities), curator naming (`pipeline.curate`, claude-sonnet-5-5),
-  /label page + `eval` commands. Weekly script: collect, extract (600), scrub, map, curate.
-- Live: 1,600 raw items; 380 extracted (1 quote miss); 266 pains; 3 problems (all
-  Firefox add-on complaints; problem 1 flagged incoherent by the curator).
-- Running: Phase 2 code review. Apply findings, then demo.
-- Waiting on Edgar: label ~200 working + ~100 held-out items at /label; decide on a looser
-  "themes" layer (topic clusters recomputed each run, for the broad radar), and on a
-  `.claude/settings.json` deny rule protecting evals/heldout/.
+- Built, reviewed, fixed, committed: extraction (headless `claude -p`, claude-haiku-5-5,
+  settings/hooks/MCP off, Unicode-safe quote grounding, opt-in re-extraction, batch
+  splitting), extract-and-discard (titles blanked too, copied-text checks, secure_delete),
+  mapping (e5-small; 0.94/0.91 thresholds; membership carried across re-extraction;
+  migration 004; clusters computed outside the write txn), curator (claude-sonnet-5-5),
+  /label + `eval` (held-out results never touch the DB), cross-process lock, atomic
+  migrations. 192 tests.
+- Live: 1,600 raw items, 380 extracted (prompt 0c6c40f4e6c5), 266 pains, 3 problems.
+  The extract prompt is now 5f6ac038f30e (untrusted-data rule); new items use it,
+  old ones keep theirs unless `extract --reextract`.
+- Waiting on Edgar: label ~200 working + ~100 held-out items at /label (needed for the
+  Phase 2 eval demo); decide on a "themes" layer (loose topic clusters per run for the
+  broad radar); decide on a `.claude/settings.json` deny rule for evals/heldout/.
 
 **Next steps**
 
@@ -69,6 +71,9 @@ on top. Keep "Current state" accurate; append to "Log".
 ## Log
 
 ### 2026-10-13
+
+- Phase 2 review: 13 findings fixed by two agents (extraction side, mapping side);
+  migration 004 applied live; map rerun idempotent.
 
 - Phase 2: mapping, curator, /label, eval commands built and committed (70c3fd4).
   Experiment: mean-centred e5 vectors form topic neighbourhoods, not same-problem groups;

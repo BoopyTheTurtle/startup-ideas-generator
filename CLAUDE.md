@@ -36,7 +36,8 @@ uv run python -m pipeline status         # recent runs
 uv run python -m pipeline collect        # all non-restricted collectors (--only NAME ...)
 uv run python -m pipeline health         # collector health
 SIG_HTTP=record uv run pytest tests/collectors/test_NAME.py   # re-record fixtures
-uv run python -m pipeline extract        # stage 2 via headless `claude -p` (--max-items N)
+uv run python -m pipeline extract        # stage 2 via headless `claude -p` (--max-items N);
+                                         # new items only; --reextract after a prompt change
 uv run python -m pipeline scrub          # blank text of no-retain items once extracted
 uv run python -m pipeline map            # stage 3: embed, assign, cluster, snapshot
 uv run python -m pipeline curate         # name new problems (LLM)
@@ -48,7 +49,15 @@ npm --prefix web run dev                 # app on http://localhost:3000
 npm --prefix web run lint
 ```
 
-`SIG_DB` overrides the database path for both Python and the app.
+`SIG_DB` overrides the database path for both Python and the app; `SIG_ROOT` overrides the
+repo root the app uses to find `evals/`.
+
+Write commands take a cross-process lock (`data/.pipeline.lock`) so scheduled tasks never
+overlap; they wait up to `--lock-wait` minutes (default 60), then exit 75. Read-only
+commands (status, health, problems, eval-status) skip it.
+
+`extract`, `curate`, and `--reextract` spend Edgar's Claude subscription: run them only
+when the task needs it, with a `--max-items` cap.
 
 ## Rules
 
@@ -57,6 +66,9 @@ npm --prefix web run lint
 - Agents write to the database only through `python -m pipeline` commands, never raw SQL.
 - Every derived row records the run that produced it; LLM-derived rows also record the
   prompt version and model.
+- "Active" pains: an item's extraction under the current prompt, else its latest
+  (`embed.ACTIVE_PAIN_SQL`). Re-extracted pains carry their problem membership.
+- Migrations run atomically; never put BEGIN/COMMIT in a migration file.
 - Log metrics with `pipeline.runs.log_metric` for every new stage (SPEC stage 8).
 - A change touches the system or its evaluation, never both.
 - Paths contain spaces; quote them in shell commands.

@@ -245,3 +245,130 @@ def test_metrics_logged(f):
     assert m[("coverage", "problems_with_country", "GB")] == 1
     status = f.conn.execute("SELECT kind, status FROM run WHERE id = ?", (r.run_id,)).fetchone()
     assert tuple(status) == ("map", "ok")
+
+
+# --- Re-extraction keeps identity ---------------------------------------------------
+
+def reextract(f, pain_id, vec, prompt_id, idx=None):
+    """A new extraction of pain_id's item under prompt_id, with one pain embedded as vec."""
+    row = f.conn.execute("SELECT x.raw_item_id, p.idx FROM pain p JOIN extraction x"
+                         " ON x.id = p.extraction_id WHERE p.id = ?", (pain_id,)).fetchone()
+    x = f.conn.execute("SELECT id FROM extraction WHERE raw_item_id = ? AND prompt_id = ?",
+                       (row[0], prompt_id)).fetchone()
+    x = x[0] if x else f.extraction(row[0], prompt_id)
+    return f.pain(vec, extraction_id=x, idx=row[1] if idx is None else idx)
+
+
+def member_row(f, pain_id):
+    return f.conn.execute("SELECT * FROM problem_member WHERE pain_id = ?", (pain_id,)).fetchone()
+
+
+def test_reextraction_carries_members_without_new_mentions(f):
+    old = group(f, 0, ["a", "b", "c"])
+    r1 = run(f)
+    [pid] = problems(f)
+    v2 = f.new_prompt("v2")
+    # The new prompt words every pain differently: alone, these would found a new problem.
+    new = [reextract(f, p, near(1, next(f.spare), 0.985), v2) for p in old]
+    r2 = run(f)
+    assert problems(f) == [pid]                          # no duplicate problem
+    assert r2.carried == 3 and r2.new_problems == r2.assigned_cluster == 0
+    for p in new:
+        row = member_row(f, p)
+        assert (row["problem_id"], row["assigned_by"], row["assigned_run_id"]) == (pid, "carried", r1.run_id)
+    assert members(f, pid) == set(old) | set(new)         # history stays
+    snap = f.conn.execute("SELECT * FROM snapshot WHERE run_id = ?", (r2.run_id,)).fetchone()
+    assert (snap["mentions"], snap["distinct_authors"], snap["new_mentions"]) == (3, 3, 0)
+    # The problem lost its old members and gained the new: its centroid follows.
+    c = from_blob(f.conn.execute("SELECT centroid FROM problem WHERE id = ?", (pid,)).fetchone()[0])
+    texts = [f"{x[0]} — {x[1]}" for x in f.conn.execute(
+        f"SELECT problem, who FROM pain WHERE id IN ({','.join('?' * len(new))})", new)]
+    expected = normalize(np.vstack([f.embedder.vectors[t] for t in texts]).mean(axis=0))
+    assert np.allclose(c, expected, atol=1e-5)
+    m = {x["name"]: x["value"] for x in f.conn.execute(
+        "SELECT name, value FROM metric WHERE run_id = ? AND layer = 'mapping'", (r2.run_id,))}
+    assert m["pains_carried"] == 3
+    # A third run changes nothing.
+    r3 = run(f)
+    assert r3.carried == 0 and problems(f) == [pid]
+
+
+def test_partial_reextraction_keeps_counts(f):
+    old = group(f, 0, ["a", "b", "c"])
+    run(f)
+    [pid] = problems(f)
+    reextract(f, old[0], near(0, next(f.spare), 0.985), f.new_prompt("v2"))
+    r2 = run(f)
+    snap = f.conn.execute("SELECT * FROM snapshot WHERE run_id = ?", (r2.run_id,)).fetchone()
+    assert (snap["problem_id"], snap["mentions"], snap["new_mentions"]) == (pid, 3, 0)
+
+
+def test_carry_matches_by_idx_then_similarity(f):
+    # Item X holds two problems: idx 0 joins the axis-0 group, idx 1 the axis-1 group.
+    x = f.extraction(f.item("x"))
+    x0 = f.pain(near(0, next(f.spare), 0.985), extraction_id=x, idx=0)
+    x1 = f.pain(near(1, next(f.spare), 0.985), extraction_id=x, idx=1)
+    group(f, 0, ["a", "b"])
+    group(f, 1, ["c", "d"])
+    run(f)
+    p0, p1 = member_row(f, x0)["problem_id"], member_row(f, x1)["problem_id"]
+    assert p0 != p1
+    # v2 keeps both problems in the same order, worded far from either group.
+    v2 = f.new_prompt("v2")
+    n0 = reextract(f, x0, axis(20), v2)
+    n1 = reextract(f, x1, axis(21), v2)
+    run(f)
+    assert member_row(f, n0)["problem_id"] == p0 and member_row(f, n1)["problem_id"] == p1
+    # v3 finds a single problem and puts it at idx 2: no idx matches, so similarity to
+    # v2's pains (axes 20 and 21) decides.
+    v3 = f.new_prompt("v3")
+    n = reextract(f, x1, near(21, 20, 0.9), v3, idx=2)
+    r = run(f)
+    assert r.carried == 1 and member_row(f, n)["problem_id"] == p1
+
+
+def test_prompt_revert_uses_current_prompt_pains(f, monkeypatch):
+    from pipeline import embed
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v1")
+    old = group(f, 0, ["a", "b", "c"])
+    run(f)
+    [pid] = problems(f)
+    v2 = f.new_prompt("v2")
+    new = [reextract(f, p, near(1, next(f.spare), 0.985), v2) for p in old]
+    # v1 is still the current prompt: its pains stay active, v2's wait.
+    r = run(f)
+    assert r.embedded == 0 and r.carried == 0 and r.pool_size_after == 0
+    assert all(member_row(f, p) is None for p in new)
+    # Switch to v2: its pains become active and carry.
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v2")
+    r = run(f)
+    assert r.embedded == 3 and r.carried == 3 and problems(f) == [pid]
+    # Revert to v1 although v2's extractions are newer: v1's pains count again.
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v1")
+    active = {x[0] for x in f.conn.execute(f"SELECT id FROM ({embed.ACTIVE_PAIN_SQL})")}
+    assert active == set(old)
+    r = run(f)
+    assert r.carried == r.assigned_centroid == r.assigned_cluster == 0 and problems(f) == [pid]
+    snap = f.conn.execute("SELECT * FROM snapshot WHERE run_id = ?", (r.run_id,)).fetchone()
+    assert (snap["mentions"], snap["new_mentions"]) == (3, 0)
+    c = from_blob(f.conn.execute("SELECT centroid FROM problem WHERE id = ?", (pid,)).fetchone()[0])
+    assert c @ axis(0) > 0.95                             # back on the v1 pains
+
+
+def test_clustering_runs_outside_the_write_transaction(f, monkeypatch, tmp_path):
+    from pipeline import db
+    group(f, 0, ["a", "b", "c"])
+    other = db.connect(tmp_path / "t.db")
+    other.execute("PRAGMA busy_timeout = 0")
+    seen = []
+    real = mapping._candidate_groups
+
+    def spy(vectors):
+        seen.append(f.conn.in_transaction)
+        with other:  # another process can write while HDBSCAN runs
+            other.execute("INSERT INTO run (kind) VALUES ('smoke')")
+        return real(vectors)
+
+    monkeypatch.setattr(mapping, "_candidate_groups", spy)
+    r = run(f)
+    assert seen == [False] and r.new_problems == 1

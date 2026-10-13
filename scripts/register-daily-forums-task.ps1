@@ -10,7 +10,7 @@ $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$script`"" `
     -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Daily -At 9am
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 90)
 
 Register-ScheduledTask -TaskName 'startup-ideas-generator forums daily' `
     -Description 'Poll approved forum feeds; see scripts/daily-forums.ps1' `

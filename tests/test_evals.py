@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from pipeline import db, evals
+from pipeline import db, embed, evals
 from pipeline.__main__ import main
 
 
@@ -10,6 +10,7 @@ from pipeline.__main__ import main
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("SIG_DB", str(tmp_path / "t.db"))
     monkeypatch.setattr(evals, "EVALS_DIR", tmp_path / "evals")
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v2")
     c = db.connect(tmp_path / "t.db")
     db.migrate(c)
     with c:
@@ -125,17 +126,36 @@ def test_eval_prompt_version_flag(env, capsys):
     assert main(["eval", "--prompt-version", "nope"]) == 1
 
 
-def test_eval_heldout_prints_aggregates_only(env, capsys):
+def test_eval_heldout_prints_aggregates_only_and_writes_no_rows(env, capsys):
     add_item(env, 1, "hn", pred=True)
     add_item(env, 2, "govuk", pred=True)
     write_labels("heldout", [(1, "pain"), (2, "not_pain")])
+    runs_before = env.execute("SELECT COUNT(*) FROM run").fetchone()[0]
     assert main(["eval", "--set", "heldout"]) == 0
     out = capsys.readouterr().out
     assert "precision 0.500" in out
     assert "hn" not in out and "govuk" not in out and "title" not in out
     assert "disagreements" not in out
-    subjects = {r["subject"] for r in env.execute("SELECT subject FROM metric")}
-    assert subjects == {"heldout:v2"}
+    assert env.execute("SELECT COUNT(*) FROM run").fetchone()[0] == runs_before
+    assert env.execute("SELECT COUNT(*) FROM metric").fetchone()[0] == 0
+    # Aggregates go to the gitignored results file only (tmp here), appended.
+    assert main(["eval", "--set", "heldout"]) == 0
+    lines = (evals.EVALS_DIR / "heldout" / "results.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    rec = json.loads(lines[0])
+    assert rec["prompt_version"] == "v2" and rec["precision"] == 0.5 and rec["tp"] == 1
+    assert not set(rec) & {"by_source", "errors", "hn", "govuk"}
+
+
+def test_eval_defaults_to_current_prompt_not_newest(env, monkeypatch, capsys):
+    add_item(env, 1, "hn", pred=False, prompt_id=1)
+    write_labels("working", [(1, "not_pain")])
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v1")  # v2 is newer
+    assert main(["eval"]) == 0
+    assert "prompt v1" in capsys.readouterr().out
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v9")  # never extracted
+    assert main(["eval"]) == 1
+    assert "v9 (current)" in capsys.readouterr().out
 
 
 def test_eval_status(env, capsys):

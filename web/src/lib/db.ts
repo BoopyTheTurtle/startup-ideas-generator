@@ -4,10 +4,11 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { REPO_ROOT } from "./paths";
 import { connection } from "next/server";
 
 const DB_PATH =
-  process.env.SIG_DB ?? path.resolve(process.cwd(), "..", "data", "ideas.db");
+  process.env.SIG_DB ?? path.join(REPO_ROOT, "data", "ideas.db");
 
 let db: DatabaseSync | null = null;
 

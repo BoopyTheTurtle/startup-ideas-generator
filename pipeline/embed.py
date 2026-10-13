@@ -13,6 +13,8 @@ outside the repo; override with HF_HOME).
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from typing import Protocol
 
@@ -22,13 +24,43 @@ DEFAULT_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_DIM = 384
 BATCH_SIZE = 64
 
-# A raw item can be re-extracted under a new prompt version. Only the pains of its latest
-# extraction count; older ones stay stored (history) but are neither embedded nor mapped.
+# A raw item can be re-extracted under another prompt version. Its active pains are those
+# of its extraction under the CURRENT extract prompt (the version pipeline/prompts/
+# extract.md hashes to now), or, when it has none, of its most recent extraction. So
+# reverting the prompt file brings back that version's pains, and an item not yet
+# re-extracted keeps the pains it has. Older pains stay stored (history) but are neither
+# embedded nor mapped.
+#
+# current_extract_version() is a SQL function that db.connect registers on every
+# connection (register_sql_functions). The prompt lookup is an uncorrelated subquery, so
+# SQLite evaluates it once per statement.
 ACTIVE_PAIN_SQL = """
     SELECT p.* FROM pain p
     JOIN extraction x ON x.id = p.extraction_id
-    WHERE x.id = (SELECT MAX(x2.id) FROM extraction x2 WHERE x2.raw_item_id = x.raw_item_id)
+    WHERE x.id = COALESCE(
+        (SELECT x2.id FROM extraction x2
+          WHERE x2.raw_item_id = x.raw_item_id
+            AND x2.prompt_id = (SELECT pr.id FROM prompt pr WHERE pr.name = 'extract'
+                                 AND pr.version = current_extract_version())),
+        (SELECT MAX(x2.id) FROM extraction x2 WHERE x2.raw_item_id = x.raw_item_id))
 """
+
+
+def current_extract_version() -> str:
+    """The version pipeline.extract.prompt_row registers for today's prompt file.
+
+    Same formula as prompt_row, without its database write: sha256 of the prompt text
+    plus the output schema, first 12 hex characters.
+    """
+    from pipeline.extract import PROMPT_FILE, SCHEMA  # lazy: extract pulls in the LLM layer
+    text = PROMPT_FILE.read_text(encoding="utf-8")
+    return hashlib.sha256((text + json.dumps(SCHEMA, sort_keys=True)).encode()).hexdigest()[:12]
+
+
+def register_sql_functions(conn: sqlite3.Connection) -> None:
+    """Give a connection the functions ACTIVE_PAIN_SQL needs. db.connect calls this."""
+    # Looked up at call time, so tests can monkeypatch current_extract_version.
+    conn.create_function("current_extract_version", 0, lambda: current_extract_version())
 
 
 class Embedder(Protocol):

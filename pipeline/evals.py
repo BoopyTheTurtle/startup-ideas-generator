@@ -10,6 +10,9 @@ evals/heldout/. Only Edgar runs the held-out eval. Even its aggregate numbers, w
 while building a change, turn the held-out set into a second working set and defeat its
 purpose. `eval-status` is safe: it prints label counts, never labels or items.
 
+`eval --set heldout` prints its aggregates and appends them to evals/heldout/results.jsonl
+(gitignored). It writes no run or metric rows: the database is shared with agents.
+
 Each line: {"raw_item_id", "source", "source_id", "label": "pain"|"not_pain"|"unsure",
 "note", "labeled_at"}. Blank lines are skipped; a later line for the same raw_item_id
 overrides an earlier one. "unsure" labels count as labeled but never enter the metrics.
@@ -17,10 +20,11 @@ overrides an earlier one. "unsure" labels count as labeled but never enter the m
 
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
-from pipeline import db, runs
+from pipeline import db, embed, runs
 from pipeline.text import find_quote, plain_text
 
 EVALS_DIR = db.ROOT / "evals"
@@ -56,15 +60,23 @@ def load_labels(path: Path) -> dict[int, dict]:
     return out
 
 
-def latest_prompt(conn: sqlite3.Connection) -> tuple[int, str] | None:
-    row = conn.execute("SELECT id, version FROM prompt WHERE name = ? ORDER BY id DESC LIMIT 1",
-                       (PROMPT_NAME,)).fetchone()
-    return (row["id"], row["version"]) if row else None
+def current_prompt(conn: sqlite3.Connection) -> tuple[int | None, str]:
+    """(prompt id, version) of the extract prompt as pipeline/prompts/extract.md stands now.
+
+    The id is None until an extraction has run under this version. The same definition
+    picks a raw item's active pains (pipeline.embed.ACTIVE_PAIN_SQL).
+    """
+    version = embed.current_extract_version()
+    row = conn.execute("SELECT id FROM prompt WHERE name = ? AND version = ?",
+                       (PROMPT_NAME, version)).fetchone()
+    return (row["id"] if row else None), version
 
 
 def find_prompt(conn: sqlite3.Connection, version: str | None) -> tuple[int, str] | None:
+    """The named prompt version, or the current one when version is None."""
     if version is None:
-        return latest_prompt(conn)
+        pid, current = current_prompt(conn)
+        return (pid, current) if pid is not None else None
     row = conn.execute("SELECT id, version FROM prompt WHERE name = ? AND version = ?",
                        (PROMPT_NAME, version)).fetchone()
     return (row["id"], row["version"]) if row else None
@@ -164,7 +176,8 @@ def _fmt(x: float | None) -> str:
     return "  -  " if x is None else f"{x:.3f}"
 
 
-def _log(conn, run_id: int, res: EvalResult, per_source: bool) -> None:
+def _log(conn, run_id: int, res: EvalResult) -> None:
+    """Working-set metrics, overall and per source. Never called for the held-out set."""
     def log(c: Confusion, subject: str) -> None:
         runs.log_metric(conn, run_id, "extraction", "eval_n", c.n, subject)
         for name in ("precision", "recall", "f1", "accuracy"):
@@ -178,9 +191,21 @@ def _log(conn, run_id: int, res: EvalResult, per_source: bool) -> None:
     if res.quote_share is not None:
         runs.log_metric(conn, run_id, "extraction", "eval_quote_verbatim_found",
                         res.quote_share, subject)
-    if per_source:
-        for source, c in res.by_source.items():
-            log(c, f"{subject}:{source}")
+    for source, c in res.by_source.items():
+        log(c, f"{subject}:{source}")
+
+
+def _record_heldout(res: EvalResult) -> None:
+    """Append the held-out aggregates to evals/heldout/results.jsonl (append only)."""
+    o = res.overall
+    rec = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "prompt_version": res.prompt_version, **asdict(o),
+           **{k: getattr(o, k) for k in ("precision", "recall", "f1", "accuracy")},
+           "unsure": res.unsure, "missing": res.missing, "quote_share": res.quote_share}
+    path = EVALS_DIR / "heldout" / "results.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
 
 
 def cmd_eval(args) -> int:
@@ -188,8 +213,9 @@ def cmd_eval(args) -> int:
     db.migrate(conn)
     prompt = find_prompt(conn, args.prompt_version)
     if prompt is None:
-        what = args.prompt_version or "any"
-        print(f"no '{PROMPT_NAME}' prompt with version {what}; run extraction first")
+        what = args.prompt_version or f"{current_prompt(conn)[1]} (current)"
+        print(f"no extractions under '{PROMPT_NAME}' prompt {what}; run extract first,"
+              " or pass --prompt-version")
         return 1
     prompt_id, version = prompt
     labels = load_labels(labels_path(args.set))
@@ -198,18 +224,23 @@ def cmd_eval(args) -> int:
         return 1
     res = evaluate(conn, labels, prompt_id, args.set, version)
     heldout = args.set == "heldout"
-    with runs.run(conn, "eval", note=f"{args.set} set, prompt {version}") as run_id:
-        # Held-out: aggregates only, so no breakdown narrows down which items it holds.
-        _log(conn, run_id, res, per_source=not heldout)
+    if heldout:
+        # Nothing reaches the shared database, so agents never see held-out numbers.
+        _record_heldout(res)
+        header = f"{args.set} set, prompt {version}, not logged (see heldout/results.jsonl)"
+    else:
+        with runs.run(conn, "eval", note=f"{args.set} set, prompt {version}") as run_id:
+            _log(conn, run_id, res)
+        header = f"{args.set} set, prompt {version}, run {run_id}"
 
     o = res.overall
-    print(f"{args.set} set, prompt {version}, run {run_id}")
+    print(header)
     print(f"n {o.n}  (unsure {res.unsure}, no extraction {res.missing})")
     print(f"precision {_fmt(o.precision)}  recall {_fmt(o.recall)}  "
           f"f1 {_fmt(o.f1)}  accuracy {_fmt(o.accuracy)}")
     print(f"verbatim quotes found in text: {_fmt(res.quote_share)} of {res.quotes_checked}")
     if heldout:
-        return 0
+        return 0  # aggregates only, so no breakdown narrows down which items it holds
     print()
     print(f"{'source':<16} {'n':>4} {'tp':>4} {'fp':>4} {'fn':>4} {'tn':>4}  "
           f"{'prec':>5}  {'rec':>5}  {'f1':>5}  {'acc':>5}")
@@ -226,8 +257,9 @@ def cmd_eval(args) -> int:
 def cmd_eval_status(args) -> int:
     conn = db.connect()
     db.migrate(conn)
-    prompt = latest_prompt(conn)
-    print(f"latest {PROMPT_NAME} prompt: {prompt[1] if prompt else 'none'}")
+    prompt_id, version = current_prompt(conn)
+    print(f"current {PROMPT_NAME} prompt: {version}"
+          + ("" if prompt_id is not None else " (no extractions yet)"))
     for set_name in SETS:
         labels = load_labels(labels_path(set_name))
         counts = {k: 0 for k in LABELS}
@@ -236,13 +268,13 @@ def cmd_eval_status(args) -> int:
         for item_id, rec in labels.items():
             counts[rec["label"]] += 1
             per_source[rec.get("source") or "?"] = per_source.get(rec.get("source") or "?", 0) + 1
-            if rec["label"] != "unsure" and (prompt is None or conn.execute(
+            if rec["label"] != "unsure" and (prompt_id is None or conn.execute(
                     "SELECT 1 FROM extraction WHERE raw_item_id = ? AND prompt_id = ?",
-                    (item_id, prompt[0])).fetchone() is None):
+                    (item_id, prompt_id)).fetchone() is None):
                 missing += 1
         print(f"\n{set_name}: {len(labels)} labeled  (pain {counts['pain']}, "
               f"not_pain {counts['not_pain']}, unsure {counts['unsure']}); "
-              f"{missing} lack an extraction for the latest prompt")
+              f"{missing} lack an extraction for the current prompt")
         for source, n in sorted(per_source.items()):
             print(f"  {source:<16} {n:>4}")
     return 0
@@ -251,7 +283,7 @@ def cmd_eval_status(args) -> int:
 def register_cli(sub) -> None:
     p = sub.add_parser("eval", help="score extraction against hand labels (agents: working set only)")
     p.add_argument("--set", choices=SETS, default="working")
-    p.add_argument("--prompt-version", help="prompt version hash (default: latest)")
+    p.add_argument("--prompt-version", help="prompt version hash (default: the current prompt file's)")
     p.set_defaults(fn=cmd_eval)
     sub.add_parser("eval-status", help="label counts per set and source").set_defaults(
         fn=cmd_eval_status)

@@ -5,6 +5,7 @@
 // A later line for the same raw_item_id overrides an earlier one.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { REPO_ROOT } from "./paths";
 
 export const EVAL_SETS = ["working", "heldout"] as const;
 export type EvalSet = (typeof EVAL_SETS)[number];
@@ -21,7 +22,7 @@ export type LabelRecord = {
   labeled_at: string;
 };
 
-const EVALS_DIR = path.resolve(process.cwd(), "..", "evals");
+const EVALS_DIR = path.join(REPO_ROOT, "evals");
 
 export function isEvalSet(v: unknown): v is EvalSet {
   return typeof v === "string" && (EVAL_SETS as readonly string[]).includes(v);

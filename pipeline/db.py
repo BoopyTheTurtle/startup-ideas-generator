@@ -24,11 +24,19 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    from pipeline.embed import register_sql_functions  # lazy: embed imports numpy
+    register_sql_functions(conn)
     return conn
 
 
 def migrate(conn: sqlite3.Connection) -> list[str]:
-    """Apply numbered .sql files in migrations/ that have not run yet."""
+    """Apply numbered .sql files in migrations/ that have not run yet.
+
+    Each file runs in one transaction together with its schema_migration row, so a
+    failing file leaves no partial change and can be fixed and rerun. SQLite DDL is
+    transactional; a migration must therefore not contain BEGIN, COMMIT, or PRAGMAs that
+    are no-ops inside a transaction (foreign_keys, journal_mode).
+    """
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migration ("
         " name TEXT PRIMARY KEY,"
@@ -39,8 +47,14 @@ def migrate(conn: sqlite3.Connection) -> list[str]:
     for f in sorted(MIGRATIONS.glob("*.sql")):
         if f.name in done:
             continue
-        with conn:
-            conn.executescript(f.read_text(encoding="utf-8"))
-            conn.execute("INSERT INTO schema_migration (name) VALUES (?)", (f.name,))
+        name = f.name.replace("'", "''")
+        script = (f"BEGIN IMMEDIATE;\n{f.read_text(encoding='utf-8')}\n;\n"
+                  f"INSERT INTO schema_migration (name) VALUES ('{name}');\nCOMMIT;")
+        try:
+            conn.executescript(script)
+        except BaseException:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
         applied.append(f.name)
     return applied

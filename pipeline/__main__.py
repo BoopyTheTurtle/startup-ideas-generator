@@ -5,6 +5,7 @@ import importlib
 import sys
 
 from pipeline import db, runs
+from pipeline.lock import LockTimeout, single_instance
 
 
 def cmd_migrate(args) -> int:
@@ -60,9 +61,16 @@ def cmd_health(args) -> int:
 # Modules exposing register_cli(subparsers). Add a module here once it exists.
 PLUGINS: list[str] = ["extract", "evals", "embed", "mapping", "curate"]
 
+# Commands that only read run without the pipeline lock; every other command writes and
+# waits for it, so two writers never overlap across processes.
+READ_ONLY = {"status", "health", "problems", "eval-status"}
+LOCK_TIMEOUT_EXIT = 75  # EX_TEMPFAIL
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="pipeline")
+    p.add_argument("--lock-wait", type=float, default=60, metavar="MINUTES",
+                   help="how long a writing command waits for another to finish (default 60)")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="apply pending migrations").set_defaults(fn=cmd_migrate)
     s = sub.add_parser("smoke", help="write a test run and metric")
@@ -81,7 +89,14 @@ def main(argv: list[str] | None = None) -> int:
     for module in PLUGINS:
         importlib.import_module(f"pipeline.{module}").register_cli(sub)
     args = p.parse_args(argv)
-    return args.fn(args)
+    if args.command in READ_ONLY:
+        return args.fn(args)
+    try:
+        with single_instance(timeout_s=args.lock_wait * 60):
+            return args.fn(args)
+    except LockTimeout as e:
+        print(f"pipeline {args.command}: not run: {e}", file=sys.stderr)
+        return LOCK_TIMEOUT_EXIT
 
 
 if __name__ == "__main__":
