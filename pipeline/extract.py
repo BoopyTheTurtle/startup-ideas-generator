@@ -347,9 +347,10 @@ def cmd_extract(args) -> int:
     db.migrate(conn)
     item_ids = None
     if args.labeled:
-        # Working-set labels only: agents may run this, and the other set stays unread.
+        # Agents use the working set only; Edgar runs the other set himself (project
+        # settings deny agents any command naming it). Output is aggregate either way.
         from pipeline.evals import labels_path, load_labels
-        item_ids = sorted(load_labels(labels_path("working")))
+        item_ids = sorted(load_labels(labels_path(args.labeled)))
     stats = extract(conn, max_items=args.max_items, batch_size=args.batch_size,
                     workers=args.workers, sources=args.source, model=args.model,
                     reextract=args.reextract, item_ids=item_ids)
@@ -374,8 +375,9 @@ def register_cli(sub) -> None:
     p.add_argument("--workers", type=int, default=3)
     p.add_argument("--source", nargs="+", help="only these sources")
     p.add_argument("--model", default=DEFAULT_MODEL)
-    p.add_argument("--labeled", action="store_true",
-                   help="only items in the working eval set (to score extraction against labels)")
+    p.add_argument("--labeled", nargs="?", const="working", choices=("working", "heldout"),
+                   help="only items in an eval set (default: working) to score extraction; "
+                        "agents use the working set only")
     p.add_argument("--reextract", action="store_true",
                    help="also re-extract items that lack an extraction under the current"
                         " prompt (default: only items never extracted)")
