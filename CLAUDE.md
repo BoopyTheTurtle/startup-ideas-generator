@@ -5,6 +5,10 @@ plus a local Next.js app where Edgar steers the narrowing from problems to a val
 idea. `SPEC.md` defines the system; `PLAN.md` tracks the build phases; `docs/research/`
 holds the research behind both. Read SPEC.md before changing behavior.
 
+**`STATUS.md` is the handoff log.** Read it first. Before you stop, or after any
+meaningful step, update its "Current state" and add a dated line to its "Log", so
+another session can pick up the work cold.
+
 This is a normal build project. The tutor rules from `Projects\Learning to code` do not
 apply here.
 
