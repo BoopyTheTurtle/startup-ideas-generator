@@ -4,10 +4,34 @@ The handoff log. Read this first when picking up work; update it before you stop
 `PLAN.md` holds the phases; this file holds where work stands right now. Newest entry
 on top. Keep "Current state" accurate; append to "Log".
 
-## Current state (2026-10-13, end of day)
+## Current state (2026-10-14, end of day)
 
-**Phase:** 3 in progress (themes + steering UI). Phase 2 eval loop paused on Edgar's
-consistency check (/label/recheck, not done yet).
+**Phase:** 4 built and under review (reassess-and-improve loop). Phase 3 demo (Edgar's
+first steering session) and the consistency check (/label/recheck) are still pending.
+
+**Phase 4 state (2026-10-14)**
+
+- Five stacked PRs on GitHub, base `dev` (which equals `main`): #1 cards and state, #2
+  metrics and mutations, #3 agents and skills, #4 review fixes, #5 Cards and Audit pages.
+  Merge them in order after review. The permission check blocked Claude from merging #1
+  without review, so nothing has landed on `dev`.
+- Git workflow: `main` = finished phases, `dev` = integration, `phase-N/<piece>` and
+  `fix/<topic>` branches into `dev` by PR. The checkout sits on `fix/phase-4-review`
+  (Python and agents, no new pages). The scheduled tasks run from this folder, so keep it on
+  a tested branch. To see the new pages before merging: `git checkout phase-4/web-cards-audit`.
+- Live data: `reassess` run 29 logged 53 metric values and 22 mutation checks; none
+  missed. The auditor proposed card 1 (looser cluster-cohesion floor: map run 28 rejected
+  40 of 40 candidate clusters, `pool_share` 0.96) and card 2 (vet more US forums: US share
+  8% against a 20% target). Both wait for Edgar at /cards.
+- Edgar's to-do for the loop: review and merge the PRs; approve or reject cards 1 and 2 at
+  /cards; run `uv run python -m pipeline audit-draw` once a month and label the 20 items at
+  /audit, then `audit-score`; decide whether to set `SIG_HEADLESS_AUDIT=1` so the weekly
+  run also runs the auditor on his subscription (off now).
+- Known limits: the metrics' thresholds are placeholders (region targets 20% each, stale
+  after 8 days); one reading is weak evidence while data is young; the extraction eval gate
+  compares working-set scores only and cannot tell apart a code change that leaves the
+  prompt text unchanged (the held-out check covers that case); run 21 is a stale 'running'
+  extract row.
 
 **Scheduled (Task Scheduler, current user):**
 - `startup-ideas-generator forums daily`: 09:00 daily, `scripts/daily-forums.ps1`
@@ -95,6 +119,11 @@ consistency check.
 ## Log
 
 ### 2026-10-14
+
+- Phase 4 built: cards and guardrails, 22 mutation-tested metrics, `reassess`, blind
+  audit, auditor/builder/reviewer agents, /cards and /audit pages. An independent review
+  found three guardrail bypasses (rename, case, moved branch ref) and others; fixed. First
+  live reassess and audit: two cards proposed. 281 tests.
 
 - Phase 3 review fixes landed (300e349 Python, d1fe66f web).
 

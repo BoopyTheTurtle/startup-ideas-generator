@@ -334,6 +334,12 @@ users, paid data sources.
    `retain_text = false`: extraction runs in the same pass and only derived fields plus
    the URL are stored. Their evidence counts as paraphrase, weaker than a verbatim quote.
 
+9. **Git workflow, 2026-10-14:** `main` holds finished phases, `dev` integrates, and work
+   goes through `phase-N/<piece>`, `fix/<topic>`, and `card/<id>-<slug>` branches by PR.
+10. **Loop approvals, 2026-10-14:** Edgar approves cards, merges, and held-out checks in the
+    app only. Agents have no command for any of them; deny rules keep raw SQL on the card
+    table out of agent shells.
+
 ## Discovery costs
 
 Forum discovery adds the first recurring paid item, a search API under $3 a month.

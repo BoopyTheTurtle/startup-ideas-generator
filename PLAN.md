@@ -96,6 +96,33 @@ Runs on harvest, extract, and map, which by now have several weeks of data.
 
 **Demo:** one weekly cycle from metrics to a merged improvement.
 
+**Phase 4 built 2026-10-14, awaiting Edgar's review.** Migration 007 adds
+`improvement_card`, `card_event`, and `mutation`. `pipeline/metrics.py` registers 22
+metrics; `pipeline/mutations.py` pairs each with an injected fault, run on a scratch copy
+of the database. `pipeline reassess` logs the metrics, runs the faults, opens instrument
+cards for misses and revert cards for regressions, and writes a digest. The `auditor`,
+`builder`, and `reviewer` agents and the `/reassess` and `/improve` skills live in
+`.claude/`. `pipeline/cards.py` enforces the guardrails from the diff and a status
+trigger. The app gained /cards and /audit; `audit-draw` and `audit-score` run the monthly
+blind audit. An independent review found three bypasses and several weaker defects; all
+are fixed. The first live `reassess` caught every fault, and the auditor proposed two
+cards that wait for Edgar's approval, so the demo's merge step is still open.
+
+Changes from the plan:
+
+- Edgar's three decisions (approve a card, approve a merge, record the held-out check)
+  are database writes by the app; no CLI command does any of them. The status trigger
+  cannot tell who writes, so against an agent with a shell the barrier is the deny rules
+  and the agent definitions, not cryptography.
+- Mutation tests run in a transaction on a scratch copy and never touch the live database
+  or Edgar's labels.
+- Trend false-alarm and judgment-layer metrics wait for eight weekly snapshots and
+  Phase 5.
+- The held-out check stays Edgar's: the app shows him no held-out numbers, and he records
+  pass or fail on the card.
+- From here on work happens on branches (`dev`, then `phase-N/<piece>`); `main` receives a
+  phase through a PR at its end.
+
 ## Phase 5 — Scoring
 
 - Evidence table with levels E1–E4; confidence computed in Python.
