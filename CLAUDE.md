@@ -12,6 +12,17 @@ another session can pick up the work cold.
 This is a normal build project. The tutor rules from `Projects\Learning to code` do not
 apply here.
 
+## Git workflow
+
+- `main` holds finished phases only. It changes through a PR from `dev` at the end of a
+  phase, after Edgar's go-ahead.
+- `dev` is the integration branch. Nothing is committed to it directly.
+- Work happens on sub-branches cut from `dev`: `phase-N/<piece>` for planned work,
+  `fix/<topic>` for repairs, `card/<id>-<slug>` for improvement cards (made by
+  `card-start`, in a worktree beside the repo). Open a PR into `dev`, check tests, merge
+  with `--no-ff`/merge commit, delete the branch.
+- Commit messages: imperative, one line of what and why; no force-pushes to `dev`/`main`.
+
 ## Layout
 
 | Path | Contents |
