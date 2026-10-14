@@ -9,6 +9,17 @@ on top. Keep "Current state" accurate; append to "Log".
 **Phase:** 4 built and under review (reassess-and-improve loop). Phase 3 demo (Edgar's
 first steering session) and the consistency check (/label/recheck) are still pending.
 
+**Reminders for Edgar** (a session that reads this on or after the date raises the item
+first thing, then marks it done here)
+
+- **Due 2026-11-02, then monthly:** blind audit. Run `uv run python -m pipeline audit-draw`,
+  label the 20 items at /audit without looking at model output, then run
+  `uv run python -m pipeline audit-score`. Claude cannot run the draw (denied).
+- **Due after Monday 2026-10-26's weekly run** (two scheduled `reassess` runs on record):
+  decide whether to set `SIG_HEADLESS_AUDIT=1` on the weekly task so the auditor runs
+  unattended on his subscription. Off until he says so. Check first that `reassess` ran
+  cleanly in `data/logs/weekly-*.log` and that any cards from cards 1 and 2 behaved.
+
 **Phase 4 state (2026-10-14)**
 
 - Five stacked PRs on GitHub, base `dev` (which equals `main`): #1 cards and state, #2
@@ -23,10 +34,8 @@ first steering session) and the consistency check (/label/recheck) are still pen
   missed. The auditor proposed card 1 (looser cluster-cohesion floor: map run 28 rejected
   40 of 40 candidate clusters, `pool_share` 0.96) and card 2 (vet more US forums: US share
   8% against a 20% target). Both wait for Edgar at /cards.
-- Edgar's to-do for the loop: review and merge the PRs; approve or reject cards 1 and 2 at
-  /cards; run `uv run python -m pipeline audit-draw` once a month and label the 20 items at
-  /audit, then `audit-score`; decide whether to set `SIG_HEADLESS_AUDIT=1` so the weekly
-  run also runs the auditor on his subscription (off now).
+- Edgar's to-do for the loop: done 2026-10-14: PRs reviewed and merged; cards 1 and 2
+  decided at /cards. Open, with reminders below.
 - Known limits: the metrics' thresholds are placeholders (region targets 20% each, stale
   after 8 days); one reading is weak evidence while data is young; the extraction eval gate
   compares working-set scores only and cannot tell apart a code change that leaves the
@@ -119,6 +128,9 @@ consistency check.
 ## Log
 
 ### 2026-10-14
+
+- Edgar merged the Phase 4 PRs and decided cards 1 and 2. Logged two reminders (monthly
+  blind audit from 2026-11-02; headless-auditor decision after 2026-10-26).
 
 - Phase 4 built: cards and guardrails, 22 mutation-tested metrics, `reassess`, blind
   audit, auditor/builder/reviewer agents, /cards and /audit pages. An independent review
