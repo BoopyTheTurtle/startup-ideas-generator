@@ -40,23 +40,16 @@ against working F1 0.56. Either v3 overfits the working labels, the held-out mix
 or labels are inconsistent; agents can't inspect the held-out set to tell. Next: the
 consistency check.
 
-**In progress (Phase 3, 2026-10-14)**
+**Phase 3 state (2026-10-14)**
 
-- Committed: migration 005; themes layer (c29307a; live run 27: 16 themes over 170 of
-  348 pains); steering UI (ca841e8): radar `/`, `/themes/[id]`, `/problems/[id]` with
-  steering actions, `/merges` (approve runs `pipeline merge`), `/runs`, top nav.
-- Reviews done (code: 11 findings; accessibility: 12). App bound to 127.0.0.1 (committed).
-  Two fix agents running against a contract: migration 006 (`pipeline_state` with key
-  `active_extract_prompt_id`, written by extract/map/themes; theme.prompt_id/model),
-  `pipeline merge ... --reason CODE [--note TEXT]` (carries the higher status, refuses
-  rejected/merged pairs). Web: Enter-submits-Watch fix, archive confirm, scoped label
-  shortcuts + toggle, contrast, page titles, chart/table a11y, merge confirms with titles,
-  merge-cli `--frozen --no-sync` + tree kill, active pains from pipeline_state.
-- Then: integrate, test, commit, demo a steering session with Edgar.
-- Known UI gaps from the builder: radar approximates "active pains" by newest extraction
-  prompt (Python uses the prompt file hash); radar counts are live while sparklines use
-  snapshots; /label pages use low-contrast zinc-500 in dark mode; docs suggest `io()`
-  over `connection()` in Next 16.3+.
+- Built, reviewed (code + accessibility), fixed, committed: themes layer, migration 006
+  (`pipeline_state.active_extract_prompt_id`, theme provenance), steering UI (radar,
+  themes, problems with steering actions, merges via `pipeline merge --reason --note`,
+  runs), label/recheck fixes. App bound to 127.0.0.1. 222 tests.
+- Next: Phase 3 demo = Edgar's first steering session (radar → themes → problems →
+  watch/promote/archive with reason codes; resolve the 3 open merge candidates). Then
+  Phase 4 (reassess-and-improve loop).
+- Still pending from Edgar: the consistency check at /label/recheck.
 
 **Next steps**
 
@@ -102,6 +95,8 @@ consistency check.
 ## Log
 
 ### 2026-10-14
+
+- Phase 3 review fixes landed (300e349 Python, d1fe66f web).
 
 - Phase 3 started: migration 005; agents on themes (Python) and steering UI (web).
 
