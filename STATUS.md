@@ -34,8 +34,9 @@ first thing, then marks it done here)
   missed. The auditor proposed card 1 (looser cluster-cohesion floor: map run 28 rejected
   40 of 40 candidate clusters, `pool_share` 0.96) and card 2 (vet more US forums: US share
   8% against a 20% target). Both wait for Edgar at /cards.
-- Edgar's to-do for the loop: done 2026-10-14: PRs reviewed and merged; cards 1 and 2
-  decided at /cards. Open, with reminders below.
+- Edgar's to-do for the loop: PRs #1-#5 merged 2026-10-14, but #2-#5 merged into their stacked
+  base branches, so `dev` has only #1. PR #6 (fix/phase-4-review -> dev) lands the rest: merge
+  it, then `main` follows at phase end. Cards 1 and 2 decided at /cards. Reminders below.
 - Known limits: the metrics' thresholds are placeholders (region targets 20% each, stale
   after 8 days); one reading is weak evidence while data is young; the extraction eval gate
   compares working-set scores only and cannot tell apart a code change that leaves the
@@ -129,7 +130,7 @@ consistency check.
 
 ### 2026-10-14
 
-- Edgar merged the Phase 4 PRs and decided cards 1 and 2. Logged two reminders (monthly
+- Edgar merged PRs #1-#5 (stacked, so dev still lacks #2-#5; PR #6 fixes that) and decided cards 1 and 2. Logged two reminders (monthly
   blind audit from 2026-11-02; headless-auditor decision after 2026-10-26).
 
 - Phase 4 built: cards and guardrails, 22 mutation-tested metrics, `reassess`, blind
