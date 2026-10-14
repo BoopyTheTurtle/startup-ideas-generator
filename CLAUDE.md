@@ -56,6 +56,17 @@ uv run python -m pipeline problems       # top problems
 uv run python -m pipeline merge KEEP DROP --reason TEXT
 uv run python -m pipeline eval-status    # label counts (safe for agents)
 uv run python -m pipeline eval           # working-set scores; --set heldout is Edgar's only
+uv run python -m pipeline reassess       # stage 8: metrics, mutation tests, revert/instrument
+                                         # cards, digest (no LLM); --no-mutations to skip tests
+uv run python -m pipeline digest         # print the latest digest (read-only)
+uv run python -m pipeline cards          # improvement cards; card-show ID for one
+uv run python -m pipeline card-add       # propose a card (JSON on stdin; the auditor's tool)
+uv run python -m pipeline card-start ID  # approved card -> branch + worktree off dev
+uv run python -m pipeline card-verify ID # diff class, tests, eval diff -> built
+uv run python -m pipeline card-review ID --verdict approve|changes --notes TEXT
+uv run python -m pipeline card-merge ID  # ready + Edgar's merge approval; run on dev
+uv run python -m pipeline audit-draw     # monthly blind-audit sample (Edgar only; denied to agents)
+uv run python -m pipeline audit-score    # score a finished blind audit
 npm --prefix web run dev                 # app on http://localhost:3000
 npm --prefix web run lint
 ```
@@ -81,7 +92,15 @@ when the task needs it, with a `--max-items` cap.
   (`embed.ACTIVE_PAIN_SQL`). Re-extracted pains carry their problem membership.
 - Migrations run atomically; never put BEGIN/COMMIT in a migration file.
 - Log metrics with `pipeline.runs.log_metric` for every new stage (SPEC stage 8).
-- A change touches the system or its evaluation, never both.
+- A change touches the system or its evaluation, never both. `card-verify` enforces it
+  from the diff; `pipeline/cards.py`, migrations, `.claude/`, `scripts/`, and `CLAUDE.md`
+  are the loop's own files and only a human-directed session edits them.
+- Every metric in `pipeline/metrics.py` needs a mutation in `pipeline/mutations.py`
+  (a test fails otherwise). New stages register both.
+- Edgar approves cards, merges, and held-out checks in the app. No CLI command does any of
+  the three, and none should be added.
+- Agents: `/reassess` (auditor, read-only) proposes cards; `/improve ID` (builder,
+  reviewer) builds one approved card in a worktree. See `.claude/agents/`.
 - `.claude/settings.json` denies Claude any read, edit, or shell command touching the
   held-out eval set (any shell command containing that folder's name is refused).
 - Paths contain spaces; quote them in shell commands.
