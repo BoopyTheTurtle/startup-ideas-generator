@@ -26,6 +26,8 @@ export function SnapshotChart({ points }: { points: ChartPoint[] }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [active, setActive] = useState<number | null>(null);
+  // Announce runs reached by keyboard only; pointer moves would flood the live region.
+  const [byKey, setByKey] = useState(false);
 
   useEffect(() => {
     const el = wrap.current;
@@ -65,6 +67,10 @@ export function SnapshotChart({ points }: { points: ChartPoint[] }) {
   }
 
   const a = active === null ? null : points[active];
+  const first = points[0];
+  const announce = a && byKey
+    ? `Run ${a.run_id}, ${a.date.slice(0, 10)}: ${a.authors} distinct authors, ${a.mentions} mentions.`
+    : "";
   const tipLeft = active === null ? 0 : Math.min(Math.max(x(active) - 70, 0), width - 150);
 
   return (
@@ -90,17 +96,26 @@ export function SnapshotChart({ points }: { points: ChartPoint[] }) {
           width="100%"
           viewBox={`0 0 ${width} ${H}`}
           role="img"
-          aria-label={`Mentions and distinct authors over ${points.length} map runs; latest ${last.mentions} mentions, ${last.authors} distinct authors. Use the left and right arrow keys to read each run.`}
+          aria-label={`Mentions and distinct authors over ${points.length} map run${points.length === 1 ? "" : "s"}: first run ${first.authors} distinct authors and ${first.mentions} mentions, latest ${last.authors} distinct authors and ${last.mentions} mentions. Arrow keys, Home and End read each run; the table view below lists every value.`}
           tabIndex={0}
           className="block touch-pan-y"
-          onPointerMove={(e) => setActive(nearest(e.clientX, e.currentTarget))}
+          onPointerMove={(e) => {
+            setByKey(false);
+            setActive(nearest(e.clientX, e.currentTarget));
+          }}
           onPointerLeave={() => setActive(null)}
-          onFocus={() => setActive((v) => v ?? lastI)}
+          onFocus={() => {
+            setByKey(true);
+            setActive((v) => v ?? lastI);
+          }}
           onBlur={() => setActive(null)}
           onKeyDown={(e) => {
             if (e.key === "ArrowLeft") setActive((v) => Math.max(0, (v ?? lastI) - 1));
             else if (e.key === "ArrowRight") setActive((v) => Math.min(lastI, (v ?? lastI) + 1));
+            else if (e.key === "Home") setActive(0);
+            else if (e.key === "End") setActive(lastI);
             else return;
+            setByKey(true);
             e.preventDefault();
           }}
         >
@@ -194,7 +209,7 @@ export function SnapshotChart({ points }: { points: ChartPoint[] }) {
           <div
             className="pointer-events-none absolute top-0 w-[150px] rounded border border-zinc-200 bg-white p-2 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
             style={{ left: tipLeft }}
-            aria-live="polite"
+            aria-hidden="true"
           >
             <p className="text-zinc-600 dark:text-zinc-400">
               run {a.run_id} · {a.date.slice(0, 10)}
@@ -204,13 +219,17 @@ export function SnapshotChart({ points }: { points: ChartPoint[] }) {
                 <svg width="12" height="8" aria-hidden="true">
                   <line x1="0" x2="12" y1="4" y2="4" stroke={s.color} strokeWidth="2" />
                 </svg>
-                <span className="font-semibold tabular-nums">{a[s.key]}</span>
+                <span className="font-semibold tabular-nums">{a[s.key]}</span>{" "}
                 <span className="text-zinc-600 dark:text-zinc-400">{s.label.toLowerCase()}</span>
               </p>
             ))}
           </div>
         )}
       </div>
+      {/* Always mounted, so screen readers register it before the first update. */}
+      <p className="sr-only" aria-live="polite">
+        {announce}
+      </p>
     </div>
   );
 }

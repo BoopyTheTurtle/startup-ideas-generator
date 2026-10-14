@@ -6,18 +6,27 @@ import { open } from "@/lib/db";
 
 type Conn = NonNullable<ReturnType<typeof open>>;
 
-// Active pains: an item's extraction under the current prompt, else its latest
-// (pipeline.embed.ACTIVE_PAIN_SQL). Python derives "current" from the prompt file's
-// hash, which the app cannot see; the prompt of the newest extraction row stands in.
-// Both agree whenever the newest extract run used today's prompt.
-const ACTIVE_PAIN_SQL = `
+// Active pains: an item's extraction under the active extract prompt, else its latest
+// (pipeline.embed.ACTIVE_PAIN_SQL). Python records the active prompt's id in
+// pipeline_state (key active_extract_prompt_id); before that table exists, or while the
+// key is unset, the prompt of the newest extraction row stands in.
+const NEWEST_PROMPT = "(SELECT x3.prompt_id FROM extraction x3 ORDER BY x3.id DESC LIMIT 1)";
+
+function activePromptSql(conn: Conn): string {
+  if (!hasTable(conn, "pipeline_state")) return NEWEST_PROMPT;
+  return `COALESCE((SELECT CAST(ps.value AS INTEGER) FROM pipeline_state ps
+                     WHERE ps.key = 'active_extract_prompt_id'), ${NEWEST_PROMPT})`;
+}
+
+function activePainSql(conn: Conn): string {
+  return `
   SELECT p.* FROM pain p
   JOIN extraction x ON x.id = p.extraction_id
   WHERE x.id = COALESCE(
     (SELECT x2.id FROM extraction x2
-      WHERE x2.raw_item_id = x.raw_item_id
-        AND x2.prompt_id = (SELECT x3.prompt_id FROM extraction x3 ORDER BY x3.id DESC LIMIT 1)),
+      WHERE x2.raw_item_id = x.raw_item_id AND x2.prompt_id = ${activePromptSql(conn)}),
     (SELECT MAX(x2.id) FROM extraction x2 WHERE x2.raw_item_id = x.raw_item_id))`;
+}
 
 // One row per pain with the raw item it came from. `pains` is a pain-shaped subquery.
 function painInfo(pains: string): string {
@@ -31,7 +40,9 @@ function painInfo(pains: string): string {
       JOIN raw_item r ON r.id = x.raw_item_id`;
 }
 
-const ACTIVE_INFO = painInfo(ACTIVE_PAIN_SQL);
+function activeInfo(conn: Conn): string {
+  return painInfo(activePainSql(conn));
+}
 const ALL_INFO = painInfo("SELECT * FROM pain");
 
 // Quote cards: verbatim first, then stronger evidence, then higher intensity.
@@ -106,28 +117,92 @@ const THEME_COLS = `t.id, t.run_id, t.title, t.statement, t.title_source, t.size
        JOIN raw_item r ON r.id = x.raw_item_id
       WHERE tm.theme_id = t.id ORDER BY src)) AS source_names`;
 
-// Problems whose active members fall mostly (over half) inside a theme of `runId`.
-function themeProblems(conn: Conn, runId: number, themeId: number | null): ThemeProblem[] {
+// Links between the themes of one run and problems, by raw item. Theme members are the
+// pains active when the themes run happened; problem members follow re-extraction to the
+// new pains. Joining both on the raw item keeps the overlap stable when an item is
+// re-extracted after the themes run. n counts the problem's active pains whose item sits
+// in the theme; total counts all its active pains.
+type ThemeLink = ThemeProblem & { theme_title: string; theme_title_source: string };
+
+function themeLinks(
+  conn: Conn,
+  runId: number,
+  opts: { themeId?: number; problemId?: number; majorityOnly: boolean },
+): ThemeLink[] {
   return conn
     .prepare(
-      `WITH info AS (${ACTIVE_INFO}),
-            totals AS (SELECT m.problem_id, COUNT(*) AS total
-                         FROM problem_member m JOIN info i ON i.pain_id = m.pain_id
-                        GROUP BY m.problem_id),
-            inside AS (SELECT tm.theme_id, m.problem_id, COUNT(*) AS n
-                         FROM theme_member tm
-                         JOIN theme t ON t.id = tm.theme_id AND t.run_id = ?
-                         JOIN problem_member m ON m.pain_id = tm.pain_id
-                        WHERE ? IS NULL OR tm.theme_id = ?
-                        GROUP BY tm.theme_id, m.problem_id)
-       SELECT s.theme_id, s.problem_id, p.title, p.status, s.n, t.total
+      `WITH info AS (${activeInfo(conn)}),
+            pm AS (SELECT m.problem_id, i.pain_id, i.raw_item_id
+                     FROM problem_member m JOIN info i ON i.pain_id = m.pain_id),
+            totals AS (SELECT problem_id, COUNT(*) AS total FROM pm GROUP BY problem_id),
+            titem AS (SELECT DISTINCT tm.theme_id, x.raw_item_id
+                        FROM theme_member tm
+                        JOIN theme t ON t.id = tm.theme_id AND t.run_id = ?
+                        JOIN pain p ON p.id = tm.pain_id
+                        JOIN extraction x ON x.id = p.extraction_id
+                       WHERE ? IS NULL OR tm.theme_id = ?),
+            inside AS (SELECT ti.theme_id, pm.problem_id, COUNT(DISTINCT pm.pain_id) AS n
+                         FROM titem ti JOIN pm ON pm.raw_item_id = ti.raw_item_id
+                        WHERE ? IS NULL OR pm.problem_id = ?
+                        GROUP BY ti.theme_id, pm.problem_id)
+       SELECT s.theme_id, s.problem_id, p.title, p.status, s.n, t.total,
+              th.title AS theme_title, th.title_source AS theme_title_source
          FROM inside s
          JOIN totals t ON t.problem_id = s.problem_id
          JOIN problem p ON p.id = s.problem_id AND p.status != 'merged'
-        WHERE s.n * 2 > t.total
-        ORDER BY s.n DESC`,
+         JOIN theme th ON th.id = s.theme_id
+        WHERE ? = 0 OR s.n * 2 > t.total
+        ORDER BY s.n DESC, s.theme_id`,
     )
-    .all(runId, themeId, themeId) as ThemeProblem[];
+    .all(
+      runId,
+      opts.themeId ?? null,
+      opts.themeId ?? null,
+      opts.problemId ?? null,
+      opts.problemId ?? null,
+      opts.majorityOnly ? 1 : 0,
+    ) as ThemeLink[];
+}
+
+// Problems whose active members fall mostly (over half) inside a theme of `runId`.
+function themeProblems(conn: Conn, runId: number, themeId: number | null): ThemeProblem[] {
+  return themeLinks(conn, runId, { themeId: themeId ?? undefined, majorityOnly: true });
+}
+
+export type ProblemTheme = { theme_id: number; title: string; title_source: string; n: number; total: number };
+
+// Themes of the latest themes run that hold any of a problem's active pains.
+function problemThemesSync(conn: Conn, problemId: number): ProblemTheme[] {
+  const run = latestThemesRunSync(conn);
+  if (!run) return [];
+  return themeLinks(conn, run.id, { problemId, majorityOnly: false }).map((l) => ({
+    theme_id: l.theme_id,
+    title: l.theme_title,
+    title_source: l.theme_title_source,
+    n: l.n,
+    total: l.total,
+  }));
+}
+
+// Titles for page metadata and outcome banners. Missing ids are left out.
+export async function problemTitles(ids: number[]): Promise<Map<number, string>> {
+  await connection();
+  const conn = open();
+  const out = new Map<number, string>();
+  if (!conn || ids.length === 0) return out;
+  const rows = conn
+    .prepare("SELECT id, title FROM problem WHERE id IN (SELECT value FROM json_each(?))")
+    .all(JSON.stringify(ids)) as { id: number; title: string }[];
+  for (const r of rows) out.set(r.id, r.title);
+  return out;
+}
+
+export async function themeTitle(id: number): Promise<string | null> {
+  await connection();
+  const conn = open();
+  if (!conn || !hasTable(conn, "theme")) return null;
+  const row = conn.prepare("SELECT title FROM theme WHERE id = ?").get(id) as { title: string } | undefined;
+  return row?.title ?? null;
 }
 
 export async function currentThemes(): Promise<{ run: ThemeRun | null; themes: ThemeWithDetail[] }> {
@@ -226,9 +301,9 @@ export type RadarFilter = { status: string; source: string; sort: "authors" | "g
 
 export const STATUS_FILTERS = ["open", "new", "watching", "promoted", "archived", "all"] as const;
 
-function statsSql(where: string): string {
+function statsSql(conn: Conn, where: string): string {
   return `
-    WITH info AS (${ACTIVE_INFO})
+    WITH info AS (${activeInfo(conn)})
     SELECT pr.id, pr.title, pr.status, pr.title_source, pr.statement, pr.merged_into,
            pr.created_run_id, pr.updated_at,
            COUNT(i.pain_id) AS mentions,
@@ -289,7 +364,7 @@ export async function radarProblems(filter: RadarFilter): Promise<{
       WHERE m2.problem_id = pr.id AND r2.source = ?)`);
     args.push(filter.source);
   }
-  const rows = conn.prepare(statsSql(clauses.join(" AND "))).all(...args) as Omit<
+  const rows = conn.prepare(statsSql(conn, clauses.join(" AND "))).all(...args) as Omit<
     ProblemRow,
     "history" | "new_mentions"
   >[];
@@ -392,6 +467,7 @@ export type ProblemDetail = {
   decisions: Decision[];
   pairs: MergePair[];
   aliases: { old_id: number; reason: string; decided_at: string }[];
+  themes: ProblemTheme[];
   snapshotRuns: number;
 };
 
@@ -399,7 +475,7 @@ export async function problemDetail(id: number, limit = 100): Promise<ProblemDet
   await connection();
   const conn = open();
   if (!conn) return null;
-  const row = conn.prepare(statsSql("pr.id = ?")).get(id) as
+  const row = conn.prepare(statsSql(conn, "pr.id = ?")).get(id) as
     | (Omit<ProblemRow, "history" | "new_mentions"> & {
         statement: string | null;
         created_run_id: number;
@@ -442,6 +518,7 @@ export async function problemDetail(id: number, limit = 100): Promise<ProblemDet
     decisions,
     pairs,
     aliases,
+    themes: problemThemesSync(conn, id),
     snapshotRuns: runs.n,
   };
 }
@@ -449,7 +526,7 @@ export async function problemDetail(id: number, limit = 100): Promise<ProblemDet
 function problemQuotesSync(conn: Conn, id: number, limit: number): Quote[] {
   return conn
     .prepare(
-      `SELECT ${QUOTE_COLS} FROM problem_member m JOIN (${ACTIVE_INFO}) i ON i.pain_id = m.pain_id
+      `SELECT ${QUOTE_COLS} FROM problem_member m JOIN (${activeInfo(conn)}) i ON i.pain_id = m.pain_id
         WHERE m.problem_id = ? ORDER BY ${QUOTE_ORDER} LIMIT ?`,
     )
     .all(id, limit) as Quote[];
@@ -460,6 +537,7 @@ function problemQuotesSync(conn: Conn, id: number, limit: number): Quote[] {
 export type MergeSide = {
   id: number;
   title: string;
+  title_source: string;
   statement: string | null;
   status: string;
   mentions: number;
@@ -483,7 +561,7 @@ export async function openMerges(): Promise<OpenMerge[] | null> {
   if (pairs.length === 0) return [];
   const ids = [...new Set(pairs.flatMap((p) => [p.a_id, p.b_id]))];
   const stats = conn
-    .prepare(statsSql("pr.id IN (SELECT value FROM json_each(?))"))
+    .prepare(statsSql(conn, "pr.id IN (SELECT value FROM json_each(?))"))
     .all(JSON.stringify(ids)) as (Omit<MergeSide, "quotes">)[];
   const byId = new Map(stats.map((s) => [s.id, s]));
   const side = (id: number): MergeSide | null => {

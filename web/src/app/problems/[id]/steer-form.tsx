@@ -2,7 +2,15 @@
 
 import { steerProblem, type SteerState } from "../actions";
 import { useActionForm } from "@/components/use-action-form";
-import { ReasonFields, buttonPrimary, buttonSecondary, input, muted } from "@/components/ui";
+import {
+  NoImplicitSubmit,
+  ReasonFields,
+  buttonDanger,
+  buttonPrimary,
+  buttonSecondary,
+  input,
+  muted,
+} from "@/components/ui";
 import { TITLE_MAX, TITLE_MIN } from "@/lib/steering-shared";
 
 const initial: SteerState = { message: "", error: false };
@@ -25,10 +33,11 @@ function Message({ state, pending }: { state: SteerState; pending: boolean }) {
   );
 }
 
-export function SteerForm({ problemId, status }: { problemId: number; status: string }) {
+export function SteerForm({ problemId, status, title }: { problemId: number; status: string; title: string }) {
   const { state, pending, action, ref, onSubmit } = useActionForm(steerProblem, initial);
   return (
     <form ref={ref} action={action} onSubmit={onSubmit} className="space-y-3" aria-describedby={`steer-help-${problemId}`}>
+      <NoImplicitSubmit />
       <input type="hidden" name="problem_id" value={problemId} />
       <p id={`steer-help-${problemId}`} className={`text-sm ${muted}`}>
         Every action records a decision with its reason. Add note saves the note without changing
@@ -36,20 +45,44 @@ export function SteerForm({ problemId, status }: { problemId: number; status: st
       </p>
       <ReasonFields idPrefix="steer" />
       <div className="flex flex-wrap gap-2">
-        {STATUS_BUTTONS.map((b) => (
-          <button
-            key={b.action}
-            type="submit"
-            name="action"
-            value={b.action}
-            disabled={pending || status === b.sets}
-            className={buttonPrimary}
-          >
-            {b.label}
-            {status === b.sets && <span className="sr-only"> (current status)</span>}
-          </button>
-        ))}
-        <button type="submit" name="action" value="note" disabled={pending} className={buttonSecondary}>
+        {STATUS_BUTTONS.map((b) => {
+          const current = status === b.sets;
+          // aria-disabled, not disabled: the button keeps focus when it becomes the current
+          // status after a save, and while the save is pending.
+          const inert = pending || current;
+          return (
+            <button
+              key={b.action}
+              type="submit"
+              name="action"
+              value={b.action}
+              aria-disabled={inert || undefined}
+              className={b.action === "archive" ? buttonDanger : buttonPrimary}
+              onClick={(e) => {
+                if (inert) {
+                  e.preventDefault();
+                  return;
+                }
+                if (b.action === "archive" && !window.confirm(`Archive "${title}" (problem ${problemId})? It leaves the open list on the radar.`)) {
+                  e.preventDefault();
+                }
+              }}
+            >
+              {b.label}
+              {current && <span className="sr-only"> (current status)</span>}
+            </button>
+          );
+        })}
+        <button
+          type="submit"
+          name="action"
+          value="note"
+          aria-disabled={pending || undefined}
+          className={buttonSecondary}
+          onClick={(e) => {
+            if (pending) e.preventDefault();
+          }}
+        >
           Add note
         </button>
       </div>
@@ -81,7 +114,7 @@ export function RenameForm({ problemId, title }: { problemId: number; title: str
         />
       </div>
       <ReasonFields idPrefix="rename" />
-      <button type="submit" disabled={pending} className={buttonSecondary}>
+      <button type="submit" aria-disabled={pending || undefined} className={buttonSecondary}>
         Rename
       </button>
       <Message state={state} pending={pending} />

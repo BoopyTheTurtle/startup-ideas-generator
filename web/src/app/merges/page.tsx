@@ -1,11 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { dbPath } from "@/lib/db";
-import { openMerges, type MergeSide } from "@/lib/radar";
+import { openMerges, problemTitles, type MergeSide } from "@/lib/radar";
 import { plural } from "@/lib/steering-shared";
+import { FocusOnMount } from "@/components/focus-on-mount";
 import { QuoteSnippet } from "@/components/quote-card";
-import { NoDatabase, StatusBadge, card, muted } from "@/components/ui";
+import { ModelNamed, NoDatabase, StatusBadge, card, muted } from "@/components/ui";
 import { MergeForm } from "./merge-form";
+
+export const metadata: Metadata = { title: "Merge queue" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -27,7 +31,8 @@ export default function MergesPage({ searchParams }: { searchParams: SearchParam
   );
 }
 
-// The last decision, carried in the URL by the action's redirect: ids only.
+// The last decision, carried in the URL by the action's redirect: ids only. The banner
+// takes focus so the outcome is announced; the form that started it has left the queue.
 async function Outcome({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const pair = (v: string | string[] | undefined) => {
@@ -36,21 +41,25 @@ async function Outcome({ searchParams }: { searchParams: SearchParams }) {
   };
   const merged = pair(sp.merged);
   const kept = pair(sp.kept);
+  const ids = merged ?? kept;
+  if (!ids) return null;
+  const titles = await problemTitles(ids);
+  const label = (id: number) => (titles.has(id) ? `"${titles.get(id)}" (problem ${id})` : `problem ${id}`);
   const text = merged
-    ? `Merged problem ${merged[0]} into problem ${merged[1]}.`
-    : kept
-      ? `Kept problems ${kept[0]} and ${kept[1]} apart.`
-      : null;
-  if (!text) return null;
+    ? `Merged ${label(ids[0])} into ${label(ids[1])}.`
+    : `Kept ${label(ids[0])} and ${label(ids[1])} apart.`;
   return (
-    <p role="status" className="mt-4 rounded bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+    <FocusOnMount
+      key={text}
+      className="mt-4 rounded bg-green-50 p-3 text-sm break-words text-green-900 outline-none focus-visible:outline-2 dark:bg-green-950 dark:text-green-200"
+    >
       {text}{" "}
       {merged && (
         <Link href={`/problems/${merged[1]}`} className="underline">
           Open problem {merged[1]}
         </Link>
       )}
-    </p>
+    </FocusOnMount>
   );
 }
 
@@ -64,10 +73,10 @@ async function Queue() {
     <ol className="mt-6 space-y-8">
       {pairs.map(({ a, b, similarity, run_id }) => (
         <li key={`${a.id}-${b.id}`} className={card}>
-          <h2 className="text-base font-medium">
-            Problems {a.id} and {b.id}{" "}
+          <h2 className="text-base font-medium break-words">
+            {a.title} <span className={`font-normal ${muted}`}>and</span> {b.title}{" "}
             <span className={`text-sm font-normal tabular-nums ${muted}`}>
-              · similarity {similarity.toFixed(3)} · found in map run {run_id}
+              · problems {a.id} and {b.id} · similarity {similarity.toFixed(3)} · found in map run {run_id}
             </span>
           </h2>
           <div className="mt-3 grid gap-4 md:grid-cols-2">
@@ -76,8 +85,8 @@ async function Queue() {
           </div>
           <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
             <MergeForm
-              a={{ id: a.id, title: a.title }}
-              b={{ id: b.id, title: b.title }}
+              a={{ id: a.id, title: a.title, status: a.status }}
+              b={{ id: b.id, title: b.title, status: b.status }}
               defaultKeep={b.distinct_authors > a.distinct_authors ? "b" : "a"}
             />
           </div>
@@ -89,7 +98,7 @@ async function Queue() {
 
 function Side({ side, letter }: { side: MergeSide; letter: string }) {
   return (
-    <section aria-label={`Problem ${side.id}`} className="min-w-0">
+    <section aria-label={`${letter}: ${side.title}`} className="min-w-0">
       <p className={`text-xs ${muted}`}>
         {letter} · problem {side.id} <StatusBadge status={side.status} />
       </p>
@@ -97,6 +106,7 @@ function Side({ side, letter }: { side: MergeSide; letter: string }) {
         <Link href={`/problems/${side.id}`} className="underline-offset-2 hover:underline">
           {side.title}
         </Link>
+        <ModelNamed source={side.title_source} />
       </h3>
       <p className={`mt-1 text-xs tabular-nums ${muted}`}>
         {plural(side.distinct_authors, "author")} · {plural(side.mentions, "member")} ·{" "}

@@ -60,6 +60,19 @@ export async function remainingBySource(exclude: number[]): Promise<Map<string, 
   return out;
 }
 
+// The ids among `ids` whose item still exists and has text to judge (the recheck pools).
+export async function withText(ids: number[]): Promise<Set<number>> {
+  await connection();
+  const conn = open();
+  if (!conn || ids.length === 0) return new Set();
+  const rows = conn
+    .prepare(
+      `SELECT id FROM raw_item WHERE id IN (SELECT value FROM json_each(?)) AND ${poolFilter(conn)}`,
+    )
+    .all(JSON.stringify(ids), "[]") as { id: number }[];
+  return new Set(rows.map((r) => r.id));
+}
+
 // A random item among `ids` (the recheck pool), with its text intact.
 export async function itemAmong(ids: number[]): Promise<LabelItem | null> {
   await connection();

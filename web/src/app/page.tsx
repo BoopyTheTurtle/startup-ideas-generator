@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { collectorHealth, dbPath } from "@/lib/db";
@@ -12,9 +13,12 @@ import {
 import { TREND_MIN_SNAPSHOTS, fmtDate, fmtDateTime, plural } from "@/lib/steering-shared";
 import { QuoteSnippet } from "@/components/quote-card";
 import { Sparkline } from "@/components/sparkline";
-import { NoDatabase, StatusBadge, buttonSecondary, card, input, muted } from "@/components/ui";
+import { ModelNamed, NoDatabase, StatusBadge, buttonSecondary, card, input, muted } from "@/components/ui";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+// The layout's title template applies to child segments only, not to this page.
+export const metadata: Metadata = { title: { absolute: "Radar · Startup ideas generator" } };
 
 export default function Radar({ searchParams }: { searchParams: SearchParams }) {
   return (
@@ -148,6 +152,7 @@ function ThemeCard({ t }: { t: ThemeWithDetail }) {
         <Link href={`/themes/${t.id}`} className="underline-offset-2 hover:underline">
           {t.title}
         </Link>
+        <ModelNamed source={t.title_source} />
       </h3>
       <p className={`mt-1 text-xs tabular-nums ${muted}`}>
         {plural(t.distinct_authors, "author")} · {plural(t.size, "pain")} ·{" "}
@@ -177,7 +182,7 @@ function ThemeCard({ t }: { t: ThemeWithDetail }) {
                   {p.title}
                 </Link>{" "}
                 <span className={`text-xs ${muted}`}>
-                  ({p.n} of {p.total} members, {p.status})
+                  ({p.n} of {p.total} active members, {p.status})
                 </span>
               </li>
             ))}
@@ -248,23 +253,25 @@ async function Problems({ searchParams }: { searchParams: SearchParams }) {
         {snapshotRuns < TREND_MIN_SNAPSHOTS
           ? `; trend flags need ${TREND_MIN_SNAPSHOTS}, so sparklines show history only.`
           : "."}{" "}
-        Counts cover active pains; &ldquo;new&rdquo; counts members added in map run {latestRun ?? "–"}.
+        Authors, members and sources are live counts over active pains; sparklines and
+        &ldquo;new&rdquo; come from map run snapshots (latest: run {latestRun ?? "–"}), so a
+        sparkline&apos;s end value can differ from the live count.
       </p>
       {problems.length === 0 ? (
         <p className={`mt-3 text-sm ${muted}`}>No problems match these filters.</p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 overflow-x-auto" tabIndex={0} role="region" aria-label="Problems table">
           <table className="w-full min-w-[44rem] text-left text-sm">
             <caption className="sr-only">Problems, {sort === "growth" ? "by recent growth" : "by distinct authors"}</caption>
             <thead className={muted}>
               <tr>
                 <th scope="col" className="py-2 pr-4 font-medium">Problem</th>
                 <th scope="col" className="py-2 pr-4 font-medium">Status</th>
-                <th scope="col" className="py-2 pr-4 text-right font-medium">Authors</th>
-                <th scope="col" className="py-2 pr-4 text-right font-medium">Members</th>
-                <th scope="col" className="py-2 pr-4 text-right font-medium">Sources</th>
-                <th scope="col" className="py-2 pr-4 text-right font-medium">New</th>
-                <th scope="col" className="py-2 font-medium">Authors per run</th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">Authors <span className="block text-xs font-normal">live</span></th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">Members <span className="block text-xs font-normal">live</span></th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">Sources <span className="block text-xs font-normal">live</span></th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">New <span className="block text-xs font-normal">run {latestRun ?? "–"}</span></th>
+                <th scope="col" className="py-2 font-medium">Authors per map run</th>
               </tr>
             </thead>
             <tbody>
@@ -274,6 +281,7 @@ async function Problems({ searchParams }: { searchParams: SearchParams }) {
                     <Link href={`/problems/${p.id}`} className="underline-offset-2 hover:underline">
                       {p.title}
                     </Link>
+                    <ModelNamed source={p.title_source} />
                   </td>
                   <td className="py-2 pr-4">
                     <StatusBadge status={p.status} />
@@ -285,6 +293,7 @@ async function Problems({ searchParams }: { searchParams: SearchParams }) {
                   <td className="py-2">
                     <Sparkline
                       label="Distinct authors"
+                      live={p.distinct_authors}
                       points={p.history.map((h) => ({ run_id: h.run_id, value: h.distinct_authors }))}
                     />
                   </td>

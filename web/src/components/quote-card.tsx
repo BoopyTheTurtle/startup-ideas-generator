@@ -49,6 +49,7 @@ export function QuoteCard({ q }: { q: Quote }) {
           title={ev?.long}
         >
           <span className="font-medium">{q.evidence_level}</span> {ev?.short ?? "unknown"}
+          {ev && <span className="sr-only">: {ev.desc}</span>}
         </span>
         <span className="rounded bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">
           intensity <span className="font-medium tabular-nums">{q.intensity}</span>/5
@@ -79,13 +80,20 @@ export function QuoteCard({ q }: { q: Quote }) {
   );
 }
 
+// Past this length the snippet clamps to four lines; a toggle shows the rest, so merge
+// decisions never rest on cut-off evidence. Clamping is visual only: screen readers get
+// the whole quote either way.
+const SNIPPET_CLAMP_CHARS = 240;
+
 // A compact quote for lists of themes and merge pairs: the quote, its kind, source, date,
 // evidence and intensity, and the link to the original.
 export function QuoteSnippet({ q }: { q: Quote }) {
   const url = safeUrl(q.url);
   const ev = EVIDENCE[q.evidence_level];
+  const text = plainText(q.quote);
+  const long = text.length > SNIPPET_CLAMP_CHARS;
   return (
-    <figure className="text-sm">
+    <figure className="group/q text-sm">
       <blockquote
         className={`whitespace-pre-wrap break-words border-l-2 pl-3 leading-6 ${
           q.quote_kind === "verbatim"
@@ -93,11 +101,23 @@ export function QuoteSnippet({ q }: { q: Quote }) {
             : "border-dashed border-zinc-300 italic dark:border-zinc-700"
         }`}
       >
-        <span className="line-clamp-4">{plainText(q.quote)}</span>
+        <span className={long ? "line-clamp-4 group-has-[details[open]]/q:line-clamp-none" : undefined}>{text}</span>
       </blockquote>
+      {long && (
+        <details className="group/d mt-1 pl-3 text-xs">
+          <summary className="cursor-pointer font-medium">
+            <span className="group-open/d:hidden">Show full quote</span>
+            <span className="hidden group-open/d:inline">Show less</span>
+          </summary>
+        </details>
+      )}
       <figcaption className="mt-1 pl-3 text-xs text-zinc-600 dark:text-zinc-400">
         {q.quote_kind === "verbatim" ? "verbatim" : "paraphrase"} · {q.source} ·{" "}
-        {fmtDate(q.created_at ?? q.fetched_at)} · <span title={ev?.long}>{q.evidence_level} {ev?.short}</span>{" "}
+        {fmtDate(q.created_at ?? q.fetched_at)} ·{" "}
+        <span title={ev?.long}>
+          {q.evidence_level} {ev?.short}
+          {ev && <span className="sr-only"> ({ev.desc})</span>}
+        </span>{" "}
         · intensity {q.intensity}/5
         {url && (
           <>

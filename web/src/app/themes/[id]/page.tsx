@@ -1,12 +1,22 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { themeDetail } from "@/lib/radar";
+import { themeDetail, themeTitle } from "@/lib/radar";
 import { fmtDate, plural } from "@/lib/steering-shared";
 import { QuoteList } from "@/components/quote-card";
-import { BackLink, StatusBadge, card, muted } from "@/components/ui";
+import { BackLink, ModelNamed, StatusBadge, card, muted } from "@/components/ui";
 
 const QUOTE_LIMIT = 100;
+
+// Streams with the page: the body defers to request time too (Cache Components).
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id: raw } = await params;
+  const id = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(id)) return { title: "Theme not found" };
+  const title = await themeTitle(id);
+  return { title: title ? `${title} (theme ${id})` : "Theme not found" };
+}
 
 export default function ThemePage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -29,7 +39,10 @@ async function Theme({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t.title}</h1>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight break-words">
+        {t.title}
+        <ModelNamed source={t.title_source} />
+      </h1>
       <p className={`mt-1 text-sm tabular-nums ${muted}`}>
         Theme {t.id} · themes run {t.run_id}
         {run && ` (${fmtDate(run.started_at)})`} · {plural(t.distinct_authors, "author")} ·{" "}
@@ -66,7 +79,7 @@ async function Theme({ params }: { params: Promise<{ id: string }> }) {
                   {p.title}
                 </Link>
                 <span className={`text-xs ${muted}`}>
-                  {p.n} of {p.total} members here
+                  {p.n} of {p.total} active members here
                 </span>
               </li>
             ))}

@@ -8,8 +8,6 @@ import { NOTE_MAX, cleanText, isReasonCode } from "@/lib/steering-shared";
 
 export type MergeState = { message: string; error: boolean };
 
-const REASON_ARG_MAX = 300;
-
 // The client names the pair, which side to keep, and the decision; the server checks
 // the pair is still open before acting on it.
 export async function decideMerge(_prev: MergeState, formData: FormData): Promise<MergeState> {
@@ -58,8 +56,8 @@ export async function decideMerge(_prev: MergeState, formData: FormData): Promis
     return { message: "Choose which problem to keep.", error: true };
   }
   const [keep, drop] = keepSide === "a" ? [aId, bId] : [bId, aId];
-  const reasonArg = (note ? `${reason}: ${note}` : reason).slice(0, REASON_ARG_MAX);
-  const res = await runMerge(keep, drop, reasonArg);
+  // The reason code and the note travel separately: decision.reason stays a bare code.
+  const res = await runMerge(keep, drop, reason, note);
   if (!res.ok) return { message: res.message, error: true };
   redirect(`/merges?merged=${drop}-${keep}`);
 }

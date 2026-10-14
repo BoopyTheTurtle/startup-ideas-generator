@@ -20,6 +20,8 @@ export function useActionForm(
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Buttons stay focusable (aria-disabled) while a submission runs; ignore a second one.
+    if (pending) return;
     const submitter = (e.nativeEvent as SubmitEvent).submitter;
     const data = new FormData(e.currentTarget, submitter);
     startTransition(() => action(data));

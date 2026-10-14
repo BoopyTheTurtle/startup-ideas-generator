@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { collectorHealth, dbPath, STALE_DAYS } from "@/lib/db";
 import { runsWithCost } from "@/lib/radar";
 import { fmtDateTime, fmtDuration, fmtUsd } from "@/lib/steering-shared";
 import { NoDatabase, muted } from "@/components/ui";
+
+export const metadata: Metadata = { title: "Runs" };
 
 export default function RunsPage() {
   return (
@@ -45,8 +48,9 @@ async function Runs() {
         <span className="tabular-nums">{fmtUsd(cost30d)}</span> in the last 30 days (as reported by{" "}
         <code>claude -p</code>).
       </p>
-      <div className="mt-2 overflow-x-auto">
+      <div className="mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Pipeline runs table">
         <table className="w-full min-w-[40rem] text-left text-sm">
+          <caption className="sr-only">Latest {runs.length} pipeline runs, newest first</caption>
           <thead className={muted}>
             <tr>
               <th scope="col" className="py-2 pr-4 font-medium">Run</th>
@@ -89,8 +93,9 @@ async function Health() {
       <p className={`mt-1 text-sm ${muted}`}>
         Stale means no successful run in {STALE_DAYS} days.
       </p>
-      <div className="mt-2 overflow-x-auto">
+      <div className="mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Collector health table">
         <table className="w-full min-w-[40rem] text-left text-sm">
+          <caption className="sr-only">Collector health by source</caption>
           <thead className={muted}>
             <tr>
               <th scope="col" className="py-2 pr-4 font-medium">Source</th>

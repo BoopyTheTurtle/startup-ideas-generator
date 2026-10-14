@@ -33,10 +33,13 @@ export type StatusAction = keyof typeof STATUS_ACTIONS;
 export const PROBLEM_STATUSES = ["new", "watching", "promoted", "archived", "merged"] as const;
 export type ProblemStatus = (typeof PROBLEM_STATUSES)[number];
 
-export const EVIDENCE: Record<string, { short: string; long: string }> = {
-  E1: { short: "said", long: "E1 said: a complaint or wish" },
-  E2: { short: "did", long: "E2 did: past behavior, a workaround or time lost" },
-  E3: { short: "paid", long: "E3 paid: money spent on the problem" },
+// Merges keep the higher of the two statuses (pipeline.mapping.STATUS_RANK).
+export const STATUS_RANK: Record<string, number> = { archived: 0, new: 1, watching: 2, promoted: 3 };
+
+export const EVIDENCE: Record<string, { short: string; desc: string; long: string }> = {
+  E1: { short: "said", desc: "a complaint or wish", long: "E1 said: a complaint or wish" },
+  E2: { short: "did", desc: "past behavior, a workaround or time lost", long: "E2 did: past behavior, a workaround or time lost" },
+  E3: { short: "paid", desc: "money spent on the problem", long: "E3 paid: money spent on the problem" },
 };
 
 // Trend flags need this many snapshot runs (SPEC stage 3).

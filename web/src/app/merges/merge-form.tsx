@@ -2,17 +2,34 @@
 
 import { useActionForm } from "@/components/use-action-form";
 import { decideMerge, type MergeState } from "./actions";
-import { ReasonFields, buttonPrimary, buttonSecondary, muted } from "@/components/ui";
+import { NoImplicitSubmit, ReasonFields, buttonPrimary, buttonSecondary, muted } from "@/components/ui";
+import { STATUS_RANK } from "@/lib/steering-shared";
 
 const initial: MergeState = { message: "", error: false };
 
-type Side = { id: number; title: string };
+type Side = { id: number; title: string; status: string };
+
+const name = (s: Side) => `"${s.title}" (problem ${s.id})`;
+
+function mergeQuestion(keep: Side, drop: Side): string {
+  const lines = [
+    `Merge ${name(drop)} into ${name(keep)}?`,
+    `Its members move to problem ${keep.id}; problem ${drop.id} becomes an alias.`,
+  ];
+  if ((STATUS_RANK[drop.status] ?? -1) > (STATUS_RANK[keep.status] ?? -1)) {
+    lines.push(
+      `Problem ${drop.id} is ${drop.status}, which outranks ${keep.status}: its status will carry over to problem ${keep.id}.`,
+    );
+  }
+  return lines.join("\n\n");
+}
 
 export function MergeForm({ a, b, defaultKeep }: { a: Side; b: Side; defaultKeep: "a" | "b" }) {
   const { state, pending, action, ref, onSubmit } = useActionForm(decideMerge, initial);
   const prefix = `m-${a.id}-${b.id}`;
   return (
     <form ref={ref} action={action} onSubmit={onSubmit} className="space-y-3">
+      <NoImplicitSubmit />
       <input type="hidden" name="a_id" value={a.id} />
       <input type="hidden" name="b_id" value={b.id} />
       <fieldset>
@@ -24,7 +41,7 @@ export function MergeForm({ a, b, defaultKeep }: { a: Side; b: Side; defaultKeep
               ["b", b],
             ] as const
           ).map(([key, side]) => (
-            <label key={key} className="flex items-start gap-2">
+            <label key={key} className="flex min-w-0 items-start gap-2">
               <input
                 type="radio"
                 name="keep"
@@ -32,9 +49,8 @@ export function MergeForm({ a, b, defaultKeep }: { a: Side; b: Side; defaultKeep
                 defaultChecked={defaultKeep === key}
                 className="mt-1"
               />
-              <span>
-                problem {side.id}{" "}
-                <span className={muted}>(the other one folds into it)</span>
+              <span className="break-words">
+                {side.title} <span className={muted}>(problem {side.id}; the other one folds into it)</span>
               </span>
             </label>
           ))}
@@ -46,20 +62,37 @@ export function MergeForm({ a, b, defaultKeep }: { a: Side; b: Side; defaultKeep
           type="submit"
           name="decision"
           value="approve"
-          disabled={pending}
+          aria-disabled={pending || undefined}
           className={buttonPrimary}
           onClick={(e) => {
+            if (pending) {
+              e.preventDefault();
+              return;
+            }
             const form = e.currentTarget.form;
             const keep = form ? new FormData(form).get("keep") : null;
             const [k, d] = keep === "b" ? [b, a] : [a, b];
-            if (!window.confirm(`Merge problem ${d.id} into problem ${k.id}? Members move to ${k.id}; ${d.id} becomes an alias.`)) {
-              e.preventDefault();
-            }
+            if (!window.confirm(mergeQuestion(k, d))) e.preventDefault();
           }}
         >
           Approve merge
         </button>
-        <button type="submit" name="decision" value="reject" disabled={pending} className={buttonSecondary}>
+        <button
+          type="submit"
+          name="decision"
+          value="reject"
+          aria-disabled={pending || undefined}
+          className={buttonSecondary}
+          onClick={(e) => {
+            if (pending) {
+              e.preventDefault();
+              return;
+            }
+            if (!window.confirm(`Keep ${name(a)} and ${name(b)} apart? The pair leaves the merge queue.`)) {
+              e.preventDefault();
+            }
+          }}
+        >
           Keep apart
         </button>
       </div>

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Startup ideas generator",
+  title: { template: "%s · Startup ideas generator", default: "Startup ideas generator" },
   description: "Problem radar and steering",
 };
 

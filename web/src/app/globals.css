@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light dark;
   --background: #ffffff;
   --foreground: #171717;
   /* Chart tokens (dataviz reference palette, validated against #ffffff and #0a0a0a). */

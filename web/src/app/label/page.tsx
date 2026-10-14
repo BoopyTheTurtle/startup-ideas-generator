@@ -1,30 +1,30 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ItemView } from "./item-view";
+import { BackLink, muted } from "@/components/ui";
 import { nextItem, remainingBySource } from "@/lib/labeling";
 import { EVAL_SETS, readLabels, type EvalSet, type LabelRecord } from "@/lib/labels";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export const metadata: Metadata = { title: "Label items" };
 
 const SET_NAMES: Record<EvalSet, string> = { working: "Working set", heldout: "Held-out set" };
 
 export default function LabelPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-10">
-      <p className="text-sm">
-        <Link href="/" className="text-zinc-500 hover:underline">
-          ← Home
-        </Link>
-      </p>
+      <BackLink href="/">Radar</BackLink>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">Label items</h1>
       <p className="mt-1 text-sm">
-        <Link href="/label/recheck" className="text-zinc-500 underline">
+        <Link href="/label/recheck" className="underline">
           Consistency check
         </Link>{" "}
-        <span className="text-zinc-500">(re-label 30 working items blind)</span>
+        <span className={muted}>(re-label 30 working items blind)</span>
       </p>
       <Definition />
-      <Suspense fallback={<p className="mt-6 text-sm text-zinc-500">Loading an item…</p>}>
+      <Suspense fallback={<p className={`mt-6 text-sm ${muted}`}>Loading an item…</p>}>
         <Labeler searchParams={searchParams} />
       </Suspense>
     </main>
@@ -80,7 +80,7 @@ async function Labeler({ searchParams }: { searchParams: SearchParams }) {
       {item ? (
         <ItemView item={item} set={set} />
       ) : (
-        <p className="mt-6 text-sm text-zinc-500">
+        <p className={`mt-6 text-sm ${muted}`}>
           No unlabeled items with text left. Run the collectors, then come back.
         </p>
       )}
@@ -117,20 +117,21 @@ function Counters({
           </li>
         ))}
       </ul>
-      <div className="mt-3 overflow-x-auto">
+      <div className="mt-3 overflow-x-auto" tabIndex={0} role="region" aria-label="Labeling progress table">
         <table className="w-full text-left text-sm">
-          <thead className="text-zinc-500">
+          <caption className="sr-only">Labels per source and set</caption>
+          <thead className={muted}>
             <tr>
-              <th className="py-2 pr-4 font-medium">Source</th>
-              <th className="py-2 pr-4 font-medium">Working</th>
-              <th className="py-2 pr-4 font-medium">Held-out</th>
-              <th className="py-2 font-medium">Unlabeled</th>
+              <th scope="col" className="py-2 pr-4 font-medium">Source</th>
+              <th scope="col" className="py-2 pr-4 font-medium">Working</th>
+              <th scope="col" className="py-2 pr-4 font-medium">Held-out</th>
+              <th scope="col" className="py-2 font-medium">Unlabeled</th>
             </tr>
           </thead>
           <tbody>
             {[...sources].sort().map((src) => (
               <tr key={src} className="border-t border-zinc-200 dark:border-zinc-800">
-                <td className="py-2 pr-4">{src}</td>
+                <th scope="row" className="py-2 pr-4 font-normal">{src}</th>
                 <td className="py-2 pr-4 tabular-nums">{bySource.working.get(src) ?? 0}</td>
                 <td className="py-2 pr-4 tabular-nums">{bySource.heldout.get(src) ?? 0}</td>
                 <td className="py-2 tabular-nums">{remaining.get(src) ?? 0}</td>

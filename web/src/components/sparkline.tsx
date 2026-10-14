@@ -1,6 +1,7 @@
 // A single-series sparkline drawn on the server: one 2px line in series-1, an end dot
 // with a surface ring, and the latest value as text in ink beside it. Each point carries
-// a native tooltip; the problem page has the full table.
+// a native tooltip; the problem page has the full table. When the caller passes the live
+// count and it differs from the last snapshot, the end value says which run it is from.
 import { TREND_MIN_SNAPSHOTS } from "@/lib/steering-shared";
 
 type Point = { run_id: number; value: number };
@@ -9,7 +10,7 @@ const W = 88;
 const H = 28;
 const PAD = 5; // room for the end dot and its ring
 
-export function Sparkline({ points, label }: { points: Point[]; label: string }) {
+export function Sparkline({ points, label, live }: { points: Point[]; label: string; live?: number }) {
   if (points.length === 0) {
     return <span className="text-xs text-zinc-600 dark:text-zinc-400">no snapshots</span>;
   }
@@ -57,6 +58,9 @@ export function Sparkline({ points, label }: { points: Point[]; label: string })
         ))}
       </svg>
       <span className="text-sm tabular-nums">{last.value}</span>
+      {live !== undefined && live !== last.value && (
+        <span className="text-xs text-zinc-600 dark:text-zinc-400">as of map run {last.run_id}</span>
+      )}
       {points.length < TREND_MIN_SNAPSHOTS && (
         <span className="text-xs text-zinc-600 dark:text-zinc-400">
           insufficient data ({points.length}/{TREND_MIN_SNAPSHOTS})
