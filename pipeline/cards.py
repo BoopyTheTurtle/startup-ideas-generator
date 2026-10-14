@@ -9,6 +9,13 @@ held-out check) are database writes by the app. This module has no command for a
 them, and the status trigger in migration 007 refuses a build without an approval and a
 merge without a merge approval and a cleared held-out check.
 
+Limit: the trigger cannot tell who writes the row. Against an agent with a shell, the
+project's deny rules (raw SQL on improvement_card, sqlite3) and the agent definitions are
+the barrier, and a determined agent can route around them. Treat approval as a strong
+convention, not a cryptographic one. The loop commands also refuse to run from inside a
+card worktree, so a builder cannot run its own edited copy of this file against the
+live database.
+
 Guardrails enforced here, not left to agent instructions:
 - a change touches the system or its evaluation, never both (classify_paths);
 - no change touches the loop's own machinery (PROTECTED) or the held-out set;
@@ -40,9 +47,12 @@ TEST_TIMEOUT_S = 1800
 
 # Path classes, tested in order against repo-relative POSIX paths.
 PROTECTED = (                # the loop's own guardrails: a builder never edits these
-    "pipeline/cards.py", "pipeline/migrations/", ".claude/", "CLAUDE.md", "scripts/",
-    "tests/test_cards.py",
+    "pipeline/cards.py", "pipeline/migrations/", "scripts/", "tests/test_cards.py",
+    "pipeline/__main__.py", "pipeline/db.py", "pipeline/lock.py", "pipeline/runs.py",
+    "tests/conftest.py", "tests/pain_factory.py", "pyproject.toml", "uv.lock", ".mcp.json",
+    ".gitignore", ".gitattributes",
 )
+PROTECTED_NAMES = ("claude.md", "agents.md")   # instruction files, in any directory
 HELDOUT_MARK = "heldout"     # any path naming the held-out set
 EVAL_PATHS = (               # the evaluation: labels, scoring, metrics, and their tests
     "evals/", "pipeline/evals.py", "pipeline/metrics.py", "pipeline/mutations.py",
@@ -58,13 +68,25 @@ class CardError(RuntimeError):
 
 
 def classify_paths(paths: list[str]) -> dict:
-    """Sort changed paths into the guardrail classes."""
-    protected = [p for p in paths if p.startswith(PROTECTED)]
+    """Sort changed paths into the guardrail classes.
+
+    Matching is case-insensitive (NTFS folds case) and uses the whole path list from
+    `git diff --no-renames`, so a rename shows both its old and new path."""
+    def low(p: str) -> str:
+        return p.replace("\\", "/").lower()
+
+    def is_protected(p: str) -> bool:
+        q = low(p)
+        parts = q.split("/")
+        return (q.startswith(PROTECTED) or parts[-1] in PROTECTED_NAMES
+                or any(d in parts for d in (".claude", ".git", ".github")))
+
+    protected = [p for p in paths if is_protected(p)]
     heldout = [p for p in paths if HELDOUT_MARK in p.lower()]
-    evaluation = [p for p in paths if p.startswith(EVAL_PATHS)]
+    evaluation = [p for p in paths if low(p).startswith(EVAL_PATHS) and p not in protected]
     system = [p for p in paths if p not in evaluation and p not in protected]
     return {"protected": protected, "heldout": heldout, "eval": evaluation, "system": system,
-            "extraction": [p for p in paths if p.startswith(EXTRACTION_PATHS)]}
+            "extraction": [p for p in paths if low(p).startswith(EXTRACTION_PATHS)]}
 
 
 def iso_week(now: datetime | None = None) -> str:
@@ -97,12 +119,28 @@ def _need(d: dict, key: str, maxlen: int = 2000) -> str:
     return v.strip()[:maxlen]
 
 
+def _check_evidence(conn: sqlite3.Connection, e: dict) -> None:
+    """An auditor's evidence must match a reading the metric table holds."""
+    try:
+        layer, name = str(e["metric"]).split(".", 1)
+        value = float(e["value"])
+    except (ValueError, TypeError):
+        raise CardError(f"evidence entry {e!r}: metric must be 'layer.name' and value a number") from None
+    rows = conn.execute("SELECT value FROM metric WHERE layer = ? AND name = ? AND subject = ?"
+                        " ORDER BY id DESC LIMIT 50", (layer, name, e.get("subject") or "")).fetchall()
+    if not any(abs(r[0] - value) <= 1e-3 * max(1.0, abs(value)) for r in rows):
+        raise CardError(f"evidence {e['metric']} [{e.get('subject') or ''}] = {value} matches no "
+                        "logged reading; copy values from the digest")
+
+
 def add_card(conn: sqlite3.Connection, d: dict, proposed_by: str = "auditor",
              reverts_card_id: int | None = None, now: datetime | None = None) -> int:
     """Validate and store one card. Raises CardError for anything an agent got wrong."""
     kind, touches = d.get("kind"), d.get("touches")
     if kind not in KINDS:
         raise CardError(f"kind must be one of {KINDS}")
+    if proposed_by != "system" and (kind == "revert" or reverts_card_id is not None):
+        raise CardError("revert cards come from reassess, not from the auditor")
     if touches not in TOUCHES:
         raise CardError("touches must be 'system' or 'eval': a card changes one, never both")
     size, value = d.get("size"), d.get("value")
@@ -127,8 +165,11 @@ def add_card(conn: sqlite3.Connection, d: dict, proposed_by: str = "auditor",
     for e in evidence:
         if not isinstance(e, dict) or not e.get("metric") or "value" not in e:
             raise CardError("each evidence entry needs metric and value")
+        if proposed_by != "system":
+            _check_evidence(conn, e)
     subject = d.get("expected_subject") or ""
-    key = d.get("dedupe_key") or f"{kind}:{metric or _slug(d.get('title', ''))}:{subject}"
+    # The key decides what counts as the same card, so only the system picks its own.
+    key = (d.get("dedupe_key") if proposed_by == "system" else None) or         f"{kind}:{metric or _slug(d.get('title', ''))}:{subject}"
     week = iso_week(now)
     with conn:
         run_id = conn.execute("INSERT INTO run (kind, note) VALUES ('cards', 'card-add')").lastrowid
@@ -215,9 +256,13 @@ def start_build(conn: sqlite3.Connection, card_id: int, base: str = "dev",
     path = root.parent / "sig-worktrees" / f"card-{card_id}"
     path.parent.mkdir(parents=True, exist_ok=True)
     base_sha = _git(["rev-parse", base], root)
-    from pipeline.embed import current_extract_version
-    base_version = current_extract_version()  # the main checkout's prompt: the eval baseline
     _git(["worktree", "add", "-b", branch, str(path), base], root)
+    try:
+        base_version = _worktree_prompt_version(path)   # the base's own prompt: the eval baseline
+    except BaseException:
+        _git(["worktree", "remove", "--force", str(path)], root, check=False)
+        _git(["branch", "-D", branch], root, check=False)
+        raise
     with conn:
         conn.execute(
             "UPDATE improvement_card SET status = 'building', build_week = ?, branch = ?,"
@@ -228,10 +273,15 @@ def start_build(conn: sqlite3.Connection, card_id: int, base: str = "dev",
     return path
 
 
-def _eval_f1(conn: sqlite3.Connection, version: str) -> float | None:
-    row = conn.execute("SELECT value FROM metric WHERE layer = 'extraction' AND name = 'eval_f1'"
-                       " AND subject = ? ORDER BY id DESC LIMIT 1", (f"working:{version}",)).fetchone()
-    return row[0] if row else None
+def _eval_scores(conn: sqlite3.Connection, version: str) -> tuple[float, float] | None:
+    """(F1, n) of the latest working-set eval of a prompt version, or None."""
+    def latest(name: str):
+        r = conn.execute("SELECT value FROM metric WHERE layer = 'extraction' AND name = ?"
+                         " AND subject = ? ORDER BY id DESC LIMIT 1",
+                         (name, f"working:{version}")).fetchone()
+        return r[0] if r else None
+    f1, n = latest("eval_f1"), latest("eval_n")
+    return (f1, n) if f1 is not None and n is not None else None
 
 
 def _worktree_prompt_version(path: Path) -> str:
@@ -256,9 +306,15 @@ def verify(conn: sqlite3.Connection, card_id: int, run_tests: bool = True) -> di
         raise CardError("the worktree has uncommitted changes; commit them first")
     head = _git(["rev-parse", "HEAD"], path)
     base = _git(["merge-base", card["base_branch"], "HEAD"], path)
-    changed = [p for p in _git(["diff", "--name-only", f"{base}..HEAD"], path).splitlines() if p]
+    tokens = _git(["-c", "core.quotepath=false", "diff", "--no-renames", "--name-status", "-z",
+                   f"{base}..HEAD"], path).split("\0")
+    entries = [(tokens[i], tokens[i + 1]) for i in range(0, len(tokens) - 1, 2)]
+    changed = [p for _, p in entries]
     cls = classify_paths(changed)
     problems: list[str] = []
+    deleted_tests = [p for st, p in entries if st.startswith("D") and p.lower().startswith("tests/")]
+    if deleted_tests:
+        problems.append(f"deletes tests: {deleted_tests}")
     if not changed:
         problems.append("the branch has no changes")
     if cls["protected"]:
@@ -277,18 +333,26 @@ def verify(conn: sqlite3.Connection, card_id: int, run_tests: bool = True) -> di
 
     if needs_heldout:
         cand = _worktree_prompt_version(path)
-        base_f1 = _eval_f1(conn, card["base_extract_version"] or "")
-        cand_f1 = _eval_f1(conn, cand)
-        result["eval_diff"] = {"base_version": card["base_extract_version"], "base_f1": base_f1,
-                               "candidate_version": cand, "candidate_f1": cand_f1}
-        if base_f1 is None:
+        base_v = card["base_extract_version"] or ""
+        base_s, cand_s = _eval_scores(conn, base_v), _eval_scores(conn, cand)
+        result["eval_diff"] = {"base_version": base_v, "candidate_version": cand,
+                               "base_f1": base_s and base_s[0], "candidate_f1": cand_s and cand_s[0],
+                               "base_n": base_s and base_s[1], "candidate_n": cand_s and cand_s[1]}
+        if cand == base_v:
+            # Extraction code changed but the prompt hash did not: a working-set eval cannot
+            # tell the two apart. The held-out check below is then the only extraction gate.
+            result["eval_diff"]["comparable"] = False
+        elif base_s is None:
             problems.append("no working-set eval for the base prompt; run `eval` on main first")
-        elif cand_f1 is None:
+        elif cand_s is None:
             problems.append("no working-set eval for the candidate prompt; in the worktree run "
                             "`extract --labeled working --reextract` then `eval` "
                             "(both spend subscription: cap them)")
-        elif cand_f1 < base_f1 - EVAL_TOLERANCE:
-            problems.append(f"working-set F1 regressed: {base_f1:.3f} -> {cand_f1:.3f}")
+        elif cand_s[1] != base_s[1]:
+            problems.append(f"the two evals scored different item counts ({base_s[1]:.0f} vs "
+                            f"{cand_s[1]:.0f}); rerun both on the same labels")
+        elif cand_s[0] < base_s[0] - EVAL_TOLERANCE:
+            problems.append(f"working-set F1 regressed: {base_s[0]:.3f} -> {cand_s[0]:.3f}")
     if run_tests and not problems:
         t = subprocess.run(["uv", "run", "pytest", "-q", "-x"], cwd=path, capture_output=True,
                            text=True, timeout=TEST_TIMEOUT_S)
@@ -312,6 +376,18 @@ def verify(conn: sqlite3.Connection, card_id: int, run_tests: bool = True) -> di
     return result
 
 
+def _branch_head(card: sqlite3.Row) -> str | None:
+    if not card["branch"]:
+        return None
+    return _git(["rev-parse", "--verify", "-q", f"refs/heads/{card['branch']}"], db.ROOT, check=False) or None
+
+
+def _require_verified_head(card: sqlite3.Row) -> None:
+    """The branch ref must still sit at the commit verify checked."""
+    if card["branch"] and _branch_head(card) != card["head_sha"]:
+        raise CardError("the branch moved since card-verify; rerun card-verify and card-review")
+
+
 def review(conn: sqlite3.Connection, card_id: int, verdict: str, notes: str) -> str:
     """The reviewer's verdict on a built card: approve -> ready, changes -> building."""
     if verdict not in ("approve", "changes"):
@@ -321,6 +397,7 @@ def review(conn: sqlite3.Connection, card_id: int, verdict: str, notes: str) -> 
         raise CardError(f"card {card_id} is {card['status']}; review a built card")
     if not notes.strip():
         raise CardError("give review notes")
+    _require_verified_head(card)
     new = "ready" if verdict == "approve" else "building"
     with conn:
         conn.execute("UPDATE improvement_card SET review_verdict = ?, review_notes = ?,"
@@ -366,15 +443,14 @@ def merge(conn: sqlite3.Connection, card_id: int) -> str:
     root, base = db.ROOT, card["base_branch"]
     if _git(["rev-parse", "--abbrev-ref", "HEAD"], root) != base:
         raise CardError(f"check out {base} in the main checkout first")
-    if _git(["status", "--porcelain", "--untracked-files=no"], root):
-        raise CardError("the main checkout has uncommitted changes")
+    dirty = [ln for ln in _git(["status", "--porcelain", "--untracked-files=no"], root).splitlines()
+             if not ln[3:].startswith("evals/")]       # the app appends to tracked label files
+    if dirty:
+        raise CardError(f"the main checkout has uncommitted changes: {dirty[:3]}")
     wt = Path(card["worktree_path"] or "")
-    if wt.is_dir():
-        head = _git(["rev-parse", "HEAD"], wt)
-        if head != card["head_sha"]:
-            raise CardError("the branch moved since verify; rerun card-verify and card-review")
+    _require_verified_head(card)
     msg = f"Card {card_id}: {card['title']}\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
-    p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", card["branch"]], cwd=root,
+    p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", card["head_sha"]], cwd=root,
                        capture_output=True, text=True)
     try:
         if p.returncode != 0:
@@ -437,8 +513,18 @@ def cmd_card_show(args) -> int:
     return 0
 
 
-def _run(fn) -> int:
+def _require_main_checkout() -> None:
+    """Loop commands run the main checkout's code, never a card worktree's own copy."""
+    git_dir = _git(["rev-parse", "--absolute-git-dir"], db.ROOT)
+    common = _git(["rev-parse", "--path-format=absolute", "--git-common-dir"], db.ROOT)
+    if Path(git_dir).resolve() != Path(common).resolve():
+        raise CardError("run loop commands from the main checkout, not from a card worktree")
+
+
+def _run(fn, main_only: bool = True) -> int:
     try:
+        if main_only:
+            _require_main_checkout()
         return fn()
     except CardError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -461,7 +547,7 @@ def cmd_card_add(args) -> int:
     def go():
         print(f"card {add_card(conn, d, proposed_by=args.by)} proposed")
         return 0
-    return _run(go)
+    return _run(go, main_only=False)
 
 
 def cmd_card_start(args) -> int:
@@ -479,7 +565,7 @@ def cmd_card_verify(args) -> int:
     db.migrate(conn)
 
     def go():
-        res = verify(conn, args.id, run_tests=not args.no_tests)
+        res = verify(conn, args.id)
         print(json.dumps({k: v for k, v in res.items() if k != "changed"}, indent=2))
         print(f"{len(res['changed'])} files changed")
         return 0 if res["ok"] else 1
@@ -527,7 +613,7 @@ def register_cli(sub) -> None:
     p.set_defaults(fn=cmd_card_show)
     p = sub.add_parser("card-add", help="propose a card from JSON on stdin (or --file)")
     p.add_argument("--file")
-    p.add_argument("--by", default="auditor", choices=["auditor", "system"])
+    p.add_argument("--by", default="auditor", choices=["auditor"])
     p.set_defaults(fn=cmd_card_add)
     p = sub.add_parser("card-start", help="branch and worktree for an approved card")
     p.add_argument("id", type=int)
@@ -535,7 +621,6 @@ def register_cli(sub) -> None:
     p.set_defaults(fn=cmd_card_start)
     p = sub.add_parser("card-verify", help="check a building card's branch")
     p.add_argument("id", type=int)
-    p.add_argument("--no-tests", action="store_true")
     p.set_defaults(fn=cmd_card_verify)
     p = sub.add_parser("card-review", help="record the reviewer's verdict")
     p.add_argument("id", type=int)

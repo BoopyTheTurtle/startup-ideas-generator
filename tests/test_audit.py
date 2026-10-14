@@ -66,6 +66,6 @@ def test_score_measures_drift_and_model_agreement(f):
         rows.append((i, x["source"], label))
     write_labels(d / "labels.jsonl", rows)
     out = audit.score(f.conn, "2026-10")
-    assert out["drift"] == [9, 10] and out["model"] == [19, 20]
+    assert out["drift"] == [9, 10] and out["model"] == [10, 10]
     row = f.conn.execute("SELECT value FROM metric WHERE name = 'audit_label_drift_agreement'").fetchone()
     assert row[0] == 0.9

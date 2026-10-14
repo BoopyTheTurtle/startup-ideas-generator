@@ -18,7 +18,10 @@ DIGEST_DIR = db.ROOT / "data" / "reassess"
 REGRESSION_ABS = 0.02            # a merged card's metric must move this far the wrong way ...
 REGRESSION_REL = 0.10            # ... and by this share of its baseline, before a revert card opens
 STAGE_KINDS = ("collect", "extract", "map", "themes", "curate")
-STAGE_METRIC_CAP = 60
+STAGE_METRIC_CAP = 300       # per run; the digest says when it cut
+STAGE_SKIP = {("coverage", "items_new_by_country"), ("coverage", "items_new_by_lang")}   # per-country rows swamp the rest
+REGRESSION_WINDOW_DAYS = 28   # a merged card is watched this long
+REGRESSION_READINGS = 2       # consecutive bad readings before a revert card opens
 
 
 def _latest_run(conn, kind: str, before: int | None = None) -> int | None:
@@ -79,12 +82,16 @@ def open_revert_cards(conn: sqlite3.Connection) -> list[int]:
                           " AND baseline_json IS NOT NULL AND kind != 'revert'"):
         base = json.loads(c["baseline_json"])
         layer, name = base["metric"].split(".", 1)
-        row = conn.execute(
+        readings = conn.execute(
             "SELECT value, run_id FROM metric WHERE layer = ? AND name = ? AND subject = ?"
-            " AND recorded_at > ? ORDER BY id DESC LIMIT 1",
-            (layer, name, base["subject"], c["merged_at"])).fetchone()
-        if row is None or not _regressed(base["value"], row["value"], base["direction"]):
+            " AND recorded_at > ? AND julianday(recorded_at) - julianday(?) <= ?"
+            " ORDER BY id DESC LIMIT ?",
+            (layer, name, base["subject"], c["merged_at"], c["merged_at"], REGRESSION_WINDOW_DAYS,
+             REGRESSION_READINGS)).fetchall()
+        if len(readings) < REGRESSION_READINGS or not all(
+                _regressed(base["value"], r["value"], base["direction"]) for r in readings):
             continue
+        row = readings[0]
         try:
             opened.append(cards.add_card(conn, {
                 "kind": "revert", "touches": c["touches"], "size": "S", "value": 5,
@@ -128,10 +135,12 @@ def build_digest(conn: sqlite3.Connection, run_id: int, current: dict, results: 
         rid = _latest_run(conn, kind)
         if rid is None:
             continue
-        rows = conn.execute("SELECT layer, name, subject, value FROM metric WHERE run_id = ?"
-                            " ORDER BY layer, name, subject LIMIT ?", (rid, STAGE_METRIC_CAP)).fetchall()
-        stage[kind] = {"run_id": rid, "metrics": [
-            {"metric": f"{r['layer']}.{r['name']}", "subject": r["subject"], "value": r["value"]} for r in rows]}
+        rows = [r for r in conn.execute(
+            "SELECT layer, name, subject, value FROM metric WHERE run_id = ? ORDER BY layer, name, subject",
+            (rid,)) if (r["layer"], r["name"]) not in STAGE_SKIP]
+        stage[kind] = {"run_id": rid, "truncated": max(0, len(rows) - STAGE_METRIC_CAP), "metrics": [
+            {"metric": f"{r['layer']}.{r['name']}", "subject": r["subject"], "value": r["value"]}
+            for r in rows[:STAGE_METRIC_CAP]]}
     one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
     return {
         "run_id": run_id,
@@ -188,6 +197,14 @@ def reassess(conn: sqlite3.Connection, with_mutations: bool = True) -> dict:
 def cmd_reassess(args) -> int:
     conn = db.connect()
     db.migrate(conn)
+    if args.skip_if_recent:
+        recent = conn.execute(
+            "SELECT id FROM run WHERE kind = 'reassess' AND status = 'ok'"
+            " AND julianday('now') - julianday(started_at) < ? / 24.0 ORDER BY id DESC LIMIT 1",
+            (args.skip_if_recent,)).fetchone()
+        if recent:
+            print(f"reassess run {recent[0]} is under {args.skip_if_recent:g}h old; skipped")
+            return 0
     r = reassess(conn, with_mutations=not args.no_mutations)
     print(f"reassess run {r['run_id']}: {r['metrics']} metric values, {r['mutations']} mutation checks, "
           f"{r['missed']} missed")
@@ -210,6 +227,8 @@ def cmd_digest(args) -> int:
 def register_cli(sub) -> None:
     p = sub.add_parser("reassess", help="weekly: metrics, mutation tests, revert and instrument cards, digest")
     p.add_argument("--no-mutations", action="store_true")
+    p.add_argument("--skip-if-recent", type=float, metavar="HOURS",
+                   help="do nothing when a reassess run finished less than this long ago")
     p.set_defaults(fn=cmd_reassess)
     p = sub.add_parser("digest", help="print the latest reassess digest (read-only)")
     p.add_argument("--run", type=int)

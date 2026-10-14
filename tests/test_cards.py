@@ -77,9 +77,9 @@ def test_rejected_key_cools_down(conn):
 
 def test_weekly_proposal_cap(conn):
     for i in range(cards.MAX_PROPOSALS_PER_WEEK):
-        cards.add_card(conn, card(dedupe_key=f"k{i}"))
+        cards.add_card(conn, card(expected_subject=f"s{i}"))
     with pytest.raises(CardError, match="proposed this week"):
-        cards.add_card(conn, card(dedupe_key="k-extra"))
+        cards.add_card(conn, card(expected_subject="s-extra"))
     # system-made cards (revert, broken instrument) are not capped
     assert cards.add_card(conn, card(dedupe_key="k-sys"), proposed_by="system")
 
@@ -172,6 +172,7 @@ def repo(tmp_path, conn, monkeypatch):
     git(root, "commit", "-m", "init")
     monkeypatch.setattr(db, "ROOT", root)
     monkeypatch.setattr("pipeline.embed.current_extract_version", lambda: "v0")
+    monkeypatch.setattr(cards, "_worktree_prompt_version", lambda p: "v0")
     return root
 
 
@@ -199,10 +200,10 @@ def test_start_requires_approval(conn, repo):
 def test_two_builds_per_week(conn, repo):
     now = datetime(2026, 10, 14, tzinfo=timezone.utc)
     for i in range(2):
-        cid = cards.add_card(conn, card(dedupe_key=f"k{i}"))
+        cid = cards.add_card(conn, card(expected_subject=f"s{i}"))
         decide(conn, cid)
         cards.start_build(conn, cid, now=now)
-    cid = cards.add_card(conn, card(dedupe_key="k3"))
+    cid = cards.add_card(conn, card(expected_subject="s3"))
     decide(conn, cid)
     with pytest.raises(CardError, match="builds already started"):
         cards.start_build(conn, cid, now=now)
@@ -254,10 +255,12 @@ def test_extraction_change_needs_eval_diff(conn, repo, monkeypatch):
     commit_file(path, "pipeline/prompts/extract.md", "new prompt\n")
     monkeypatch.setattr(cards, "_worktree_prompt_version", lambda p: "v1")
 
-    def f1(version, value):
+    def f1(version, value, n=100):
         with conn:
             conn.execute("INSERT INTO metric (run_id, layer, name, subject, value)"
                          " VALUES (1, 'extraction', 'eval_f1', ?, ?)", (f"working:{version}", value))
+            conn.execute("INSERT INTO metric (run_id, layer, name, subject, value)"
+                         " VALUES (1, 'extraction', 'eval_n', ?, ?)", (f"working:{version}", n))
 
     res = cards.verify(conn, cid, run_tests=False)
     assert any("no working-set eval for the base" in p for p in res["problems"])
@@ -309,3 +312,77 @@ def test_head_moved_after_review_blocks_merge(conn, repo, monkeypatch):
     commit_file(path, "pipeline/mapping.py", "X = 99\n")
     with pytest.raises(CardError, match="branch moved"):
         cards.merge(conn, cid)
+
+
+def test_auditor_cannot_choose_key_or_file_reverts(conn):
+    a = cards.add_card(conn, card(dedupe_key="mine"))
+    assert cards.get_card(conn, a)["dedupe_key"] == "extraction:extraction.quote_miss_rate:"
+    with pytest.raises(CardError, match="open card"):
+        cards.add_card(conn, card(dedupe_key="a-fresh-key"))      # the key cannot dodge dedupe
+    with pytest.raises(CardError, match="revert cards come from"):
+        cards.add_card(conn, card(kind="revert", expected_subject="x"))
+
+
+def test_evidence_must_match_a_logged_reading(conn):
+    with pytest.raises(CardError, match="matches no logged reading"):
+        cards.add_card(conn, card(evidence=[{"metric": "extraction.quote_miss_rate", "value": 0.9}]))
+
+
+def test_classify_closes_rename_case_and_instruction_file_escapes():
+    c = classify_paths(["Scripts/evil.ps1", "pipeline/Cards.py", "web/CLAUDE.md", "pipeline/db.py",
+                        "pyproject.toml", "sub/.claude/agents/x.md", "pipeline/mapping.py"])
+    assert c["system"] == ["pipeline/mapping.py"] and len(c["protected"]) == 6
+
+
+def test_rename_of_a_protected_file_is_caught(conn, repo):
+    (repo / "pipeline" / "cards.py").write_text("# guardrails\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "base cards")
+    cid, path = building_card(conn, repo)
+    git(path, "mv", "pipeline/cards.py", "pipeline/cards_x.py")
+    git(path, "commit", "-m", "rename")
+    res = cards.verify(conn, cid, run_tests=False)
+    assert any("protected" in p for p in res["problems"])
+
+
+def test_deleting_a_test_fails_verify(conn, repo):
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_x.py").write_text("def test_x(): pass\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "add a test")
+    cid, path = building_card(conn, repo)
+    git(path, "rm", "-q", "tests/test_x.py")
+    git(path, "commit", "-m", "drop the test")
+    assert any("deletes tests" in p for p in cards.verify(conn, cid, run_tests=False)["problems"])
+
+
+def test_branch_moved_after_verify_blocks_review_even_without_worktree(conn, repo):
+    cid, path = building_card(conn, repo)
+    commit_file(path, "pipeline/mapping.py", "X = 2\n")
+    assert cards.verify(conn, cid, run_tests=False)["ok"]
+    commit_file(path, "pipeline/mapping.py", "X = 3\n")
+    with pytest.raises(CardError, match="branch moved"):
+        cards.review(conn, cid, "approve", "ok")
+
+
+def test_eval_gate_needs_the_same_item_count(conn, repo, monkeypatch):
+    cid, path = building_card(conn, repo)
+    (path / "pipeline" / "prompts").mkdir()
+    commit_file(path, "pipeline/prompts/extract.md", "new prompt\n")
+    monkeypatch.setattr(cards, "_worktree_prompt_version", lambda p: "v1")
+    with conn:
+        for v, n in (("v0", 100), ("v1", 5)):
+            conn.execute("INSERT INTO metric (run_id, layer, name, subject, value) VALUES (1, 'extraction',"
+                         " 'eval_f1', ?, 0.6)", (f"working:{v}",))
+            conn.execute("INSERT INTO metric (run_id, layer, name, subject, value) VALUES (1, 'extraction',"
+                         " 'eval_n', ?, ?)", (f"working:{v}", n))
+    res = cards.verify(conn, cid, run_tests=False)
+    assert any("different item counts" in p for p in res["problems"])
+
+
+def test_unchanged_prompt_hash_is_marked_not_comparable(conn, repo):
+    cid, path = building_card(conn, repo)
+    (path / "pipeline").mkdir(exist_ok=True)
+    commit_file(path, "pipeline/extract.py", "# code only\n")
+    res = cards.verify(conn, cid, run_tests=False)
+    assert res["ok"] and res["eval_diff"]["comparable"] is False and res["needs_heldout"]
