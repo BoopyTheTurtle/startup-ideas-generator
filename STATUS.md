@@ -6,8 +6,8 @@ on top. Keep "Current state" accurate; append to "Log".
 
 ## Current state (2026-10-13, end of day)
 
-**Phase:** 2 done except its eval demo; mid-way through the first stage-8-style loop
-(source review + extraction prompt tightening). Phase 3 (themes layer + radar) is next.
+**Phase:** 3 in progress (themes + steering UI). Phase 2 eval loop paused on Edgar's
+consistency check (/label/recheck, not done yet).
 
 **Scheduled (Task Scheduler, current user):**
 - `startup-ideas-generator forums daily`: 09:00 daily, `scripts/daily-forums.ps1`
@@ -39,6 +39,17 @@ Edgar's held-out run of v3 (2026-10-14): precision 0.24, recall 0.22, F1 0.23 (n
 against working F1 0.56. Either v3 overfits the working labels, the held-out mix differs,
 or labels are inconsistent; agents can't inspect the held-out set to tell. Next: the
 consistency check.
+
+**In progress (Phase 3, 2026-10-14)**
+
+- Migration 005 (theme, theme_member) applied and committed as the contract.
+- Agent A: `pipeline/themes.py` (mean-centred HDBSCAN topic clusters over active pains,
+  ≥3 distinct authors, names carried by member Jaccard, Sonnet naming), `themes` and
+  `themes-list` CLI, weekly.ps1 step. Uncommitted until reviewed.
+- Agent B: web UI: radar home (themes + problems + health banner), /themes/[id],
+  /problems/[id] with steering actions (decision rows; status/title only), /merges
+  (approve runs `pipeline merge` via execFile), /runs, top nav. Uncommitted until reviewed.
+- Then: integrate, code + accessibility review, commit, demo a steering session.
 
 **Next steps**
 
@@ -81,6 +92,8 @@ consistency check.
 ## Log
 
 ### 2026-10-14
+
+- Phase 3 started: migration 005; agents on themes (Python) and steering UI (web).
 
 - Held-out F1 0.23 vs working 0.56 on v3. Built /label/recheck + `eval-consistency`.
 
