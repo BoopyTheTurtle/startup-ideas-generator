@@ -3,6 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Chart tokens (dataviz reference palette, validated against #ffffff and #0a0a0a). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #c3c2b7;
+  --chart-ink-muted: #52514e;
+  --focus: #2a78d6;
 }
 
 @theme inline {
@@ -16,6 +23,12 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #383835;
+    --chart-ink-muted: #c3c2b7;
+    --focus: #6da7ec;
   }
 }
 
@@ -23,4 +36,10 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
