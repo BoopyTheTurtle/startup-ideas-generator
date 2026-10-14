@@ -59,11 +59,11 @@ def cmd_health(args) -> int:
 
 
 # Modules exposing register_cli(subparsers). Add a module here once it exists.
-PLUGINS: list[str] = ["extract", "evals", "embed", "mapping", "curate"]
+PLUGINS: list[str] = ["extract", "evals", "embed", "mapping", "curate", "themes"]
 
 # Commands that only read run without the pipeline lock; every other command writes and
 # waits for it, so two writers never overlap across processes.
-READ_ONLY = {"status", "health", "problems", "eval-status"}
+READ_ONLY = {"status", "health", "problems", "eval-status", "themes-list"}
 LOCK_TIMEOUT_EXIT = 75  # EX_TEMPFAIL
 
 

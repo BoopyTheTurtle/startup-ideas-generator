@@ -29,5 +29,7 @@ if (Test-Path (Join-Path $hfHub 'models--intfloat--multilingual-e5-small')) {
     $env:HF_HUB_OFFLINE = '1'
 }
 Step 'map'     { uv run python -m pipeline map }
+# Themes after map (pains already embedded) and before curate; names new themes with Sonnet (<= 40).
+Step 'themes'  { uv run python -m pipeline themes }
 Step 'curate'  { uv run python -m pipeline curate }
 Step 'health'  { uv run python -m pipeline health }
