@@ -45,8 +45,14 @@ consistency check.
 - Committed: migration 005; themes layer (c29307a; live run 27: 16 themes over 170 of
   348 pains); steering UI (ca841e8): radar `/`, `/themes/[id]`, `/problems/[id]` with
   steering actions, `/merges` (approve runs `pipeline merge`), `/runs`, top nav.
-- Running: code review and accessibility review of Phase 3. Apply findings, then demo a
-  steering session with Edgar (PLAN Phase 3 demo).
+- Reviews done (code: 11 findings; accessibility: 12). App bound to 127.0.0.1 (committed).
+  Two fix agents running against a contract: migration 006 (`pipeline_state` with key
+  `active_extract_prompt_id`, written by extract/map/themes; theme.prompt_id/model),
+  `pipeline merge ... --reason CODE [--note TEXT]` (carries the higher status, refuses
+  rejected/merged pairs). Web: Enter-submits-Watch fix, archive confirm, scoped label
+  shortcuts + toggle, contrast, page titles, chart/table a11y, merge confirms with titles,
+  merge-cli `--frozen --no-sync` + tree kill, active pains from pipeline_state.
+- Then: integrate, test, commit, demo a steering session with Edgar.
 - Known UI gaps from the builder: radar approximates "active pains" by newest extraction
   prompt (Python uses the prompt file hash); radar counts are live while sparklines use
   snapshots; /label pages use low-contrast zinc-500 in dark mode; docs suggest `io()`
