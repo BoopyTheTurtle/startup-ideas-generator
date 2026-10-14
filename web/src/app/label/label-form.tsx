@@ -59,8 +59,20 @@ function subscribe(l: () => void): () => void {
   };
 }
 
-export function LabelForm({ itemId, set }: { itemId: number; set: FormSet }) {
-  const [state, action, pending] = useActionState(submitLabel, initial);
+// `set` and `submit` default to the eval-set labeling flow. The monthly audit passes its own
+// action and the month as an extra hidden field, and no set.
+export function LabelForm({
+  itemId,
+  set,
+  submit = submitLabel,
+  hidden,
+}: {
+  itemId: number;
+  set?: FormSet;
+  submit?: (prev: LabelState, formData: FormData) => Promise<LabelState>;
+  hidden?: Record<string, string>;
+}) {
+  const [state, action, pending] = useActionState(submit, initial);
   const shortcuts = useSyncExternalStore(subscribe, snapshot, () => true);
   const form = useRef<HTMLFormElement>(null);
   const buttons = useRef<Partial<Record<Label, HTMLButtonElement | null>>>({});
@@ -90,7 +102,8 @@ export function LabelForm({ itemId, set }: { itemId: number; set: FormSet }) {
   return (
     <form ref={form} action={action} className="mt-6 space-y-3">
       <input type="hidden" name="raw_item_id" value={itemId} />
-      <input type="hidden" name="set" value={set} />
+      {set && <input type="hidden" name="set" value={set} />}
+      {hidden && Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
       <div>
         <label htmlFor={noteId} className="block text-sm font-medium">
           Note <span className={`font-normal ${muted}`}>(optional)</span>
