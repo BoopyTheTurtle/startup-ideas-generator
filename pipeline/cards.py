@@ -395,6 +395,11 @@ def merge(conn: sqlite3.Connection, card_id: int) -> str:
                      " updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
                      (sha, json.dumps(baseline) if baseline else None, card_id))
         _event(conn, card_id, "system", "merged", sha[:8])
+        if card["reverts_card_id"]:
+            conn.execute("UPDATE improvement_card SET status = 'reverted', updated_at ="
+                         " strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND status = 'merged'",
+                         (card["reverts_card_id"],))
+            _event(conn, card["reverts_card_id"], "system", "reverted", f"by card {card_id}")
     if wt.is_dir():
         _git(["worktree", "remove", "--force", str(wt)], root, check=False)
     return sha
