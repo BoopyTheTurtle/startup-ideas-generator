@@ -42,14 +42,15 @@ consistency check.
 
 **In progress (Phase 3, 2026-10-14)**
 
-- Migration 005 (theme, theme_member) applied and committed as the contract.
-- Agent A: `pipeline/themes.py` (mean-centred HDBSCAN topic clusters over active pains,
-  ≥3 distinct authors, names carried by member Jaccard, Sonnet naming), `themes` and
-  `themes-list` CLI, weekly.ps1 step. Uncommitted until reviewed.
-- Agent B: web UI: radar home (themes + problems + health banner), /themes/[id],
-  /problems/[id] with steering actions (decision rows; status/title only), /merges
-  (approve runs `pipeline merge` via execFile), /runs, top nav. Uncommitted until reviewed.
-- Then: integrate, code + accessibility review, commit, demo a steering session.
+- Committed: migration 005; themes layer (c29307a; live run 27: 16 themes over 170 of
+  348 pains); steering UI (ca841e8): radar `/`, `/themes/[id]`, `/problems/[id]` with
+  steering actions, `/merges` (approve runs `pipeline merge`), `/runs`, top nav.
+- Running: code review and accessibility review of Phase 3. Apply findings, then demo a
+  steering session with Edgar (PLAN Phase 3 demo).
+- Known UI gaps from the builder: radar approximates "active pains" by newest extraction
+  prompt (Python uses the prompt file hash); radar counts are live while sparklines use
+  snapshots; /label pages use low-contrast zinc-500 in dark mode; docs suggest `io()`
+  over `connection()` in Next 16.3+.
 
 **Next steps**
 
