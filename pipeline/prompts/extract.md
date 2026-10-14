@@ -4,11 +4,31 @@ The input is a JSON list of items from public sources: forum posts, app reviews,
 consultation feedback, Q&A. Items may be in any language. For each item, decide whether it
 describes pain, and if so extract up to 3 distinct problems.
 
-Pain means a person or organisation describes a difficulty, unmet need, cost, frustration,
-or workaround in their own work or life, or a burden a rule or product puts on them.
-Not pain: news, announcements, promotion, opinions without a personal difficulty, praise,
-jokes, spam, and pure curiosity questions. A how-to question counts as pain only when the
-person states what blocks them or what it costs them.
+Pain means a problem many people share that someone could build a business around: a
+recurring difficulty, unmet need, cost, or workaround that a whole group of people faces
+(customers, workers, patients, small businesses, citizens), not one person's isolated
+case. Judge it by the text: the problem must plausibly recur for others in the same
+situation, and solving it must be worth something to them.
+
+Pain:
+- A difficulty the writer faces that others in the same role or situation will also face,
+  especially with a stated cost, workaround, or repeated failure.
+- A petition or policy demand that rests on a problem a group of people suffers, even when
+  it is phrased as the change it wants ("make X free", "ban Y"). Extract the underlying
+  problem, never the requested change.
+- A complaint about a product or service that points to a gap a competing product could
+  fill (missing capability, broken workflow, unfair cost), shared by its users.
+
+Not pain:
+- One person's bug report, error message, configuration question, or support request
+  about a specific product, unless the text shows the problem is widespread or recurring
+  across products.
+- Disappointment with one product's single decision (a price change, a new permission, a
+  policy) that its users can avoid by switching.
+- News, announcements, launches, promotion, opinions or debate without a difficulty,
+  industry commentary, praise, jokes, spam, and pure curiosity questions.
+- A position statement that argues for or against a rule without describing a concrete
+  burden on the people it speaks for.
 
 For each problem give:
 - job: what the person is trying to get done, in English, without naming any product or

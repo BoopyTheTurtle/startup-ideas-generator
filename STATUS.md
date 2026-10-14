@@ -29,17 +29,20 @@ deny rules; `eval-status` shows only its total). Current prompt 5f6ac038f30e on 
 working set: precision ~0.49, recall ~0.77. The model calls too much pain, and misses
 petitions phrased as solutions.
 
-**Open question for Edgar (ask first thing):** his labels suggest "pain" means a problem
-shared by many people or worth a business, not one person's bug report: he marked
-individual tech-support posts and extension malfunctions *not pain*, but most petitions
-*pain* even when phrased as a demand ("free travel card for under-18s"). Confirm the
-definition in his words before writing prompt v3, then update the definition shown on
-/label so future labels match.
+**Prompt v3 (3f6fc1251c6e, 2026-10-14)** uses Edgar's definition: "a problem many people
+share that someone could build a business around, not one person's bug report."
+Working set: precision 0.49 -> 0.63, recall 0.77 -> 0.50, accuracy 0.62 -> 0.73;
+petitions 0.86/0.86. Recall fell on wordpress (1/12) and firefox_addons (5/17), where
+Edgar's labels are inconsistent: near-identical bug reports and data-collection
+complaints carry opposite labels. Kept v3 (precision first, matches his definition).
 
 **Next steps**
 
-1. Get Edgar's pain definition; write extract prompt v3 (general rules, no item-specific
-   wording); `extract --labeled --reextract`; `eval`; Edgar runs the held-out eval himself.
+1. Edgar runs the held-out check on v3 (his commands: `extract --labeled <set> --reextract
+   --max-items 150`, then `eval --set <set>`); compare with working-set F1 0.56.
+2. Label consistency: add a blind re-label mode to /label (re-show ~20 already-labeled
+   reviews/support posts without their old label) and measure Edgar's self-agreement. If
+   low, relabel those sources with a sharper rule, or drop product reviews as pain sources.
 2. Non-English forums: Edgar marks them "unsure"; suggest browser translate on /label, or
    add an English rendering (costs usage).
 3. Phase 3: themes layer (mean-centred e5 topic clusters per run, curator-named), radar,
@@ -70,6 +73,11 @@ definition in his words before writing prompt v3, then update the definition sho
   for regex-bearing lines.
 
 ## Log
+
+### 2026-10-14
+
+- Extract prompt v3 from Edgar's pain definition; /label shows the same definition.
+  Working-set scores above. Found inconsistent labels on reviews/support posts.
 
 ### 2026-10-13
 
