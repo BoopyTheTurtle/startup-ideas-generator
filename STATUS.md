@@ -77,6 +77,9 @@ consistency check.
 - No founder-fit scoring; market merit only.
 - Extraction via headless `claude -p` on Edgar's subscription (no API key set).
 - Themes layer opens Phase 3.
+- Lookup groups from report 01 (search demand, labor market, regulation, funding,
+  patents/research, macro/trade/shipping, e-commerce) stay as planned: scoring inputs in
+  Phase 5, lookups in Phase 7. Edgar confirmed 2026-10-14 after asking about them.
 
 **Gotchas**
 
