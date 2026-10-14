@@ -4,7 +4,9 @@
       "Read(/evals/heldout/**)",
       "Edit(/evals/heldout/**)",
       "Bash(*heldout*)",
-      "PowerShell(*heldout*)"
+      "PowerShell(*heldout*)",
+      "Bash(*audit-draw*)",
+      "PowerShell(*audit-draw*)"
     ]
   }
 }
