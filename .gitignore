@@ -40,3 +40,6 @@ web/next-env.d.ts
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Agent worktrees
+.claude/worktrees/
