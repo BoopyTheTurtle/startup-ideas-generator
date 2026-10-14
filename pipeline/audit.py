@@ -17,6 +17,7 @@ that set's item ids only, never its labels.
 
 import json
 import random
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,14 +50,15 @@ def draw(conn: sqlite3.Connection, month: str, seed: int | None = None) -> dict:
     path = blind_dir(month) / "sample.json"
     if path.exists():
         raise SystemExit(f"{path} exists: a month's sample is drawn once, so it cannot be cherry-picked")
-    rng = random.Random(seed if seed is not None else int(month.replace("-", "")))
+    seed = seed if seed is not None else secrets.randbits(32)     # recorded below; not guessable
+    rng = random.Random(seed)
     prompt_id, _ = evals.current_prompt(conn)
     if prompt_id is None:
         raise SystemExit("no extractions under the current prompt yet; run extract first")
     working = evals.load_labels(evals.labels_path("working"))
     excluded = set(evals.load_labels(evals.labels_path("heldout")))       # ids only
     readable = {r[0]: r[1] for r in conn.execute(
-        "SELECT id, source FROM raw_item WHERE text_discarded_at IS NULL AND body != ''")}
+        "SELECT id, source FROM raw_item WHERE retain_text = 1 AND text_discarded_at IS NULL AND body != ''")}
 
     drift_pool: dict[str, list[int]] = {}
     for item_id, rec in working.items():
@@ -74,7 +76,7 @@ def draw(conn: sqlite3.Connection, month: str, seed: int | None = None) -> dict:
 
     items = [(i, "drift") for i in drift] + [(i, "model") for i in model]
     rng.shuffle(items)
-    sample = {"month": month, "seed": seed if seed is not None else int(month.replace("-", "")),
+    sample = {"month": month, "seed": seed,
               "drawn_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
               "items": [{"raw_item_id": i, "source": readable[i]} for i, _ in items]}
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,8 +103,9 @@ def score(conn: sqlite3.Connection, month: str) -> dict:
         if pools.get(str(item_id)) == "drift" and item_id in working and working[item_id]["label"] != "unsure":
             drift[1] += 1
             drift[0] += (working[item_id]["label"] == "pain") == truth
+        # Model error is scored on the fresh half only: the working-set items tuned the prompt.
         row = conn.execute("SELECT is_pain FROM extraction WHERE raw_item_id = ? AND prompt_id = ?",
-                           (item_id, prompt_id)).fetchone() if prompt_id else None
+                           (item_id, prompt_id)).fetchone() if prompt_id and pools.get(str(item_id)) == "model" else None
         if row is not None:
             model[1] += 1
             model[0] += bool(row["is_pain"]) == truth
@@ -114,7 +117,8 @@ def score(conn: sqlite3.Connection, month: str) -> dict:
         if model[1]:
             runs.log_metric(conn, run_id, "methodology", "audit_model_agreement",
                             round(model[0] / model[1], 4), month)
-        runs.log_metric(conn, run_id, "methodology", "audit_labeled", len(labels), month)
+        if labels:
+            runs.log_metric(conn, run_id, "methodology", "audit_labeled", len(labels), month)
     return out
 
 

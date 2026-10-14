@@ -63,7 +63,10 @@ effort. You change nothing yourself.
 
 ## Submitting a card
 
-Pipe one JSON object to `uv run python -m pipeline card-add`:
+Give `uv run python -m pipeline card-add` one JSON object on stdin, as a heredoc
+(`uv run python -m pipeline card-add <<'EOF'` ... `EOF`). Evidence values must match
+readings in the digest, and the system picks the card's dedupe key. Revert cards are
+not yours to file. Example:
 
 ```json
 {

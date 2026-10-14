@@ -25,7 +25,7 @@ import numpy as np
 from pipeline import db, embed, evals, runs
 from pipeline.metrics import REGISTRY, compute_all
 
-MIN_DELTA = 1e-6
+MIN_DELTA = 1e-3             # days for the time-based metric; far above clock drift between two reads
 
 
 @dataclass(frozen=True)

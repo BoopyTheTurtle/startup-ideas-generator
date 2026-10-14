@@ -8,7 +8,8 @@ description: Weekly reassessment of the startup-ideas-generator pipeline. Runs `
 The loop's measure, diagnose, and propose steps (SPEC stage 8). Approving, building, and
 merging come later and belong to Edgar and /improve.
 
-1. From the repo root run `uv run python -m pipeline reassess`. It logs the metrics, runs
+1. From the repo root run `uv run python -m pipeline reassess --skip-if-recent 6` (the weekly
+   script may have just run it). It logs the metrics, runs
    the mutation tests on a scratch copy of the database, opens `instrument` cards for any
    metric that missed its fault and `revert` cards for merged changes that regressed, and
    writes a digest. If it fails, report the error and stop.

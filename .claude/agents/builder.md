@@ -20,6 +20,8 @@ gives you the card id and the path of its worktree (made by `card-start`).
   `CLAUDE.md`) or anything about the held-out set.
 - Never read, list, or touch `evals/heldout/`, and never run a command containing that
   folder's name. Never run `eval --set heldout`.
+- Run every loop command (`card-verify`, `card-show`) from the main checkout; they refuse to
+  run from a worktree.
 - Never run `card-merge`, `card-review`, or write to the database except through
   `python -m pipeline` commands. Never push, merge, or rebase.
 - Follow `CLAUDE.md`: collectors, migrations, and metrics rules; paths contain spaces,

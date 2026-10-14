@@ -51,6 +51,9 @@ def test_missed_mutation_opens_one_instrument_card(f, monkeypatch):
 
 
 def merged_card(f, direction="down", value=0.2):
+    with f.conn:
+        f.conn.execute("INSERT INTO metric (run_id, layer, name, subject, value) VALUES (?, 'extraction',"
+                       " 'backlog_items', '', 1)", (f.collect_run,))
     cid = cards.add_card(f.conn, {
         "kind": "extraction", "touches": "system", "title": "Cut quote misses",
         "observation": "o", "evidence": [{"metric": "extraction.backlog_items", "value": 1}],
@@ -59,7 +62,7 @@ def merged_card(f, direction="down", value=0.2):
         "risk": "r", "size": "S", "value": 3})
     with f.conn:
         f.conn.execute("DROP TRIGGER improvement_card_transition")
-        f.conn.execute("UPDATE improvement_card SET status = 'merged', merged_at = '2000-01-01T00:00:00Z',"
+        f.conn.execute("UPDATE improvement_card SET status = 'merged', merged_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day'),"
                        " merged_sha = 'abc', baseline_json = ? WHERE id = ?",
                        (json.dumps({"metric": "extraction.backlog_items", "subject": "", "value": value,
                                     "run_id": 1, "direction": direction}), cid))
@@ -75,7 +78,9 @@ def test_regression_opens_revert_card(f):
     cid = merged_card(f, "down", 10.0)
     log(f, 9.5)                                    # barely moved, right way
     assert reassess.open_revert_cards(f.conn) == []
-    log(f, 40.0)                                   # got worse
+    log(f, 40.0)                                   # one bad reading is not enough
+    assert reassess.open_revert_cards(f.conn) == []
+    log(f, 41.0)                                   # two in a row
     [rid] = reassess.open_revert_cards(f.conn)
     revert = cards.get_card(f.conn, rid)
     assert revert["kind"] == "revert" and revert["reverts_card_id"] == cid
@@ -86,4 +91,5 @@ def test_regression_opens_revert_card(f):
 def test_improvement_opens_no_revert_card(f):
     merged_card(f, "up", 10.0)
     log(f, 30.0)
+    log(f, 31.0)
     assert reassess.open_revert_cards(f.conn) == []
