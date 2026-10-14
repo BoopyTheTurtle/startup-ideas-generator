@@ -25,9 +25,11 @@ One run:
 7. Write every theme and member row in one short transaction, then log metrics.
 
 Naming runs before the write, on the read snapshot, so all of a run's rows land together
-and the clustering never holds the write lock. The theme table has no prompt column; the
-run note records the naming prompt version and model, and the LLM metrics carry the
-prompt version as their subject (as curate.py does).
+and the clustering never holds the write lock. A curator-named theme records its naming
+prompt and model (theme.prompt_id, theme.model; migration 006); a carried theme copies
+its source theme's, and 'auto' themes have neither. The run note also names the prompt
+version and model, and the LLM metrics carry the prompt version as their subject (as
+curate.py does).
 """
 
 from __future__ import annotations
@@ -40,8 +42,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pipeline import runs
-from pipeline.embed import DEFAULT_MODEL, Embedder, embed_pending, from_blob, normalize
+from pipeline import db, runs
+from pipeline.embed import (DEFAULT_MODEL, Embedder, active_extract_prompt_id, embed_pending,
+                            from_blob, normalize)
 from pipeline.llm import ClaudeCode, LLMError, Runtime
 from pipeline.mapping import _PAIN_INFO_SQL
 
@@ -114,6 +117,8 @@ class _Prev:
     statement: str | None
     title_source: str
     items: set[int]
+    prompt_id: int | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -154,10 +159,11 @@ def _read(conn: sqlite3.Connection, model: str, run_id: int) -> _Inputs:
         if prev_run:
             # Overlap is measured on raw items, not pain ids, so re-extraction (which
             # gives an item new pain ids) doesn't break the carry.
-            prev = {r["id"]: _Prev(r["id"], r["title"], r["statement"], r["title_source"], set())
+            prev = {r["id"]: _Prev(r["id"], r["title"], r["statement"], r["title_source"], set(),
+                                   r["prompt_id"], r["model"])
                     for r in conn.execute(
-                        "SELECT id, title, statement, title_source FROM theme WHERE run_id = ?"
-                        " ORDER BY id", (prev_run["id"],))}
+                        "SELECT id, title, statement, title_source, prompt_id, model FROM theme"
+                        " WHERE run_id = ? ORDER BY id", (prev_run["id"],))}
             for r in conn.execute(
                     "SELECT m.theme_id, x.raw_item_id FROM theme_member m"
                     " JOIN theme t ON t.id = m.theme_id JOIN pain p ON p.id = m.pain_id"
@@ -184,6 +190,8 @@ class _Theme:
     sources: int
     countries: int
     cohesion: float
+    prompt_id: int | None = None    # naming provenance: curator-named or carried themes
+    model: str | None = None
 
 
 def centre(X: np.ndarray) -> np.ndarray:
@@ -264,6 +272,7 @@ def _carry(inp: _Inputs, themes: list[_Theme]) -> None:
         used_p.add(j)
         t, p = themes[k], named[j]
         t.title, t.statement, t.title_source, t.carried_from = p.title, p.statement, "carried", p.id
+        t.prompt_id, t.model = p.prompt_id, p.model
 
 
 # --- Naming ---------------------------------------------------------------------------
@@ -272,16 +281,20 @@ def prompt_version() -> str:
     return hashlib.sha256((SYSTEM + json.dumps(SCHEMA, sort_keys=True)).encode()).hexdigest()[:12]
 
 
-def _register_prompt(conn: sqlite3.Connection) -> str:
+def _register_prompt(conn: sqlite3.Connection) -> tuple[int, str]:
+    """Register the naming prompt; return (prompt.id, version)."""
     version = prompt_version()
     with conn:
         conn.execute("INSERT OR IGNORE INTO prompt (name, version, text) VALUES ('themes', ?, ?)",
                      (version, SYSTEM))
-    return version
+    pid = conn.execute("SELECT id FROM prompt WHERE name = 'themes' AND version = ?",
+                       (version,)).fetchone()[0]
+    return pid, version
 
 
 def _name(inp: _Inputs, themes: list[_Theme], runtime: Runtime, res: ThemesResult,
-          model: str = MODEL, limit: int = NAME_LIMIT, batch_size: int = NAME_BATCH) -> None:
+          prompt_id: int | None = None, model: str = MODEL, limit: int = NAME_LIMIT,
+          batch_size: int = NAME_BATCH) -> None:
     """Title the 'auto' themes (largest first, at most `limit`) in place."""
     todo = [k for k, t in enumerate(themes) if t.title_source == "auto"][:limit]
     for start in range(0, len(todo), batch_size):
@@ -309,22 +322,26 @@ def _name(inp: _Inputs, themes: list[_Theme], runtime: Runtime, res: ThemesResul
             wanted.discard(a["id"])  # first answer per id wins
             t = themes[a["id"] - 1]
             t.title, t.title_source = title, "curator"
+            t.prompt_id, t.model = prompt_id, out.model or model
             t.statement = " ".join(str(a.get("statement") or "").split()) or None
             res.themes_named += 1
 
 
 # --- Write ----------------------------------------------------------------------------
 
-def _write(conn: sqlite3.Connection, run_id: int, inp: _Inputs, themes: list[_Theme]) -> None:
+def _write(conn: sqlite3.Connection, run_id: int, inp: _Inputs, themes: list[_Theme],
+           extract_prompt_id: int) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
+        db.set_state(conn, db.ACTIVE_EXTRACT_PROMPT_ID, str(extract_prompt_id))
         for t in themes:
             tid = conn.execute(
                 "INSERT INTO theme (run_id, title, statement, title_source, carried_from, size,"
-                " distinct_authors, sources, countries, cohesion)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " distinct_authors, sources, countries, cohesion, prompt_id, model)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (run_id, t.title, t.statement, t.title_source, t.carried_from, t.size,
-                 t.distinct_authors, t.sources, t.countries, round(t.cohesion, 4))).lastrowid
+                 t.distinct_authors, t.sources, t.countries, round(t.cohesion, 4),
+                 t.prompt_id, t.model)).lastrowid
             conn.executemany("INSERT INTO theme_member (theme_id, pain_id) VALUES (?, ?)",
                              [(tid, inp.ids[i]) for i in t.rows])
         conn.commit()
@@ -341,7 +358,8 @@ def themes_run(conn: sqlite3.Connection, embedder: Embedder | None = None,
     """Compute one themes run. With an embedder, embed missing vectors first; with
     name=True, title new themes through `runtime` (ClaudeCode by default)."""
     model = embedder.model_id if embedder else (model or DEFAULT_MODEL)
-    version = _register_prompt(conn) if name else None
+    naming_prompt_id, version = _register_prompt(conn) if name else (None, None)
+    extract_prompt_id = active_extract_prompt_id(conn)  # may register the row: outside the run
     note = f"naming prompt {version}, {MODEL}" if name else "unnamed"
     with runs.run(conn, "themes", note=note) as run_id:
         res = ThemesResult(run_id)
@@ -350,8 +368,9 @@ def themes_run(conn: sqlite3.Connection, embedder: Embedder | None = None,
         inp = _read(conn, model, run_id)
         themes = _plan(inp)                     # HDBSCAN runs here, outside any transaction
         if name and any(t.title_source == "auto" for t in themes):
-            _name(inp, themes, runtime or ClaudeCode(), res, limit=name_limit)
-        _write(conn, run_id, inp, themes)       # every theme row lands together, or none
+            _name(inp, themes, runtime or ClaudeCode(), res, prompt_id=naming_prompt_id,
+                  limit=name_limit)
+        _write(conn, run_id, inp, themes, extract_prompt_id)       # every theme row lands together, or none
         res.themes_total = len(themes)
         res.themes_carried = sum(t.title_source == "carried" for t in themes)
         res.pains_in_themes = sum(t.size for t in themes)

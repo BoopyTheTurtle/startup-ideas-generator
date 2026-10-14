@@ -58,3 +58,22 @@ def migrate(conn: sqlite3.Connection) -> list[str]:
             raise
         applied.append(f.name)
     return applied
+
+
+# --- pipeline_state: facts the pipeline publishes for the app (migration 006) ----------
+
+# prompt.id (as text) of the extract prompt pipeline/prompts/extract.md hashes to now.
+ACTIVE_EXTRACT_PROMPT_ID = "active_extract_prompt_id"
+
+
+def set_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+    """Upsert one pipeline_state row. Runs in the caller's transaction; commits nothing."""
+    conn.execute(
+        "INSERT INTO pipeline_state (key, value) VALUES (?, ?)"
+        " ON CONFLICT (key) DO UPDATE SET value = excluded.value,"
+        " updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')", (key, str(value)))
+
+
+def get_state(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM pipeline_state WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None

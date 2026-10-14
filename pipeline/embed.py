@@ -57,6 +57,20 @@ def current_extract_version() -> str:
     return hashlib.sha256((text + json.dumps(SCHEMA, sort_keys=True)).encode()).hexdigest()[:12]
 
 
+def active_extract_prompt_id(conn: sqlite3.Connection) -> int:
+    """prompt.id of the current extract prompt, registering the prompt row if needed.
+
+    Writes (and commits) only when the row is missing, so call it outside any explicit
+    transaction. The app reads this id from pipeline_state to apply ACTIVE_PAIN_SQL's rule.
+    """
+    row = conn.execute("SELECT id FROM prompt WHERE name = 'extract' AND version = ?",
+                       (current_extract_version(),)).fetchone()
+    if row is not None:
+        return row[0]
+    from pipeline.extract import prompt_row  # lazy: extract pulls in the LLM layer
+    return prompt_row(conn)[0]
+
+
 def register_sql_functions(conn: sqlite3.Connection) -> None:
     """Give a connection the functions ACTIVE_PAIN_SQL needs. db.connect calls this."""
     # Looked up at call time, so tests can monkeypatch current_extract_version.

@@ -37,8 +37,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pipeline import runs
-from pipeline.embed import ACTIVE_PAIN_SQL, DEFAULT_MODEL, Embedder, embed_pending, from_blob, normalize, to_blob
+from pipeline import db, runs
+from pipeline.embed import (ACTIVE_PAIN_SQL, DEFAULT_MODEL, Embedder, active_extract_prompt_id,
+                            embed_pending, from_blob, normalize, to_blob)
 
 # --- Tunable by stage 8 -------------------------------------------------------------
 # SPEC and report 04 start at 0.88 (assign) and 0.80-0.88 (merge band), values borrowed
@@ -366,9 +367,10 @@ def _plan(inp: _Inputs, res: MapResult) -> _Plan:
 # --- Write: one short transaction ------------------------------------------------------
 
 def _write(conn: sqlite3.Connection, run_id: int, inp: _Inputs, plan: _Plan,
-           res: MapResult) -> None:
+           res: MapResult, extract_prompt_id: int) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
+        db.set_state(conn, db.ACTIVE_EXTRACT_PROMPT_ID, str(extract_prompt_id))
         real: dict[int, int] = {}
         for t, title in plan.new.items():
             real[t] = conn.execute(
@@ -404,13 +406,14 @@ def map_run(conn: sqlite3.Connection, embedder: Embedder | None = None,
             model: str | None = None) -> MapResult:
     """Run one mapping pass. With an embedder, embed missing vectors first."""
     model = embedder.model_id if embedder else (model or DEFAULT_MODEL)
+    extract_prompt_id = active_extract_prompt_id(conn)  # may register the row: outside the run
     with runs.run(conn, "map") as run_id:
         res = MapResult(run_id)
         if embedder is not None:
             res.embedded = embed_pending(conn, embedder)
         inp = _read(conn, model)
         plan = _plan(inp, res)            # HDBSCAN runs here, outside any transaction
-        _write(conn, run_id, inp, plan, res)  # every mapping write lands together, or none
+        _write(conn, run_id, inp, plan, res, extract_prompt_id)  # all lands together, or none
         _log_metrics(conn, run_id, res)
     return res
 
@@ -513,8 +516,20 @@ def resolve(conn: sqlite3.Connection, problem_id: int) -> int:
         seen.add(problem_id)
 
 
-def merge(conn: sqlite3.Connection, keep_id: int, drop_id: int, reason: str) -> int:
-    """Fold problem drop_id into keep_id. Returns the id kept (after alias resolution)."""
+# Steering statuses, lowest first. A merge keeps the higher of the two problems' statuses.
+STATUS_RANK = {"archived": 0, "new": 1, "watching": 2, "promoted": 3}
+
+
+def merge(conn: sqlite3.Connection, keep_id: int, drop_id: int, reason: str,
+          note: str | None = None, force: bool = False) -> int:
+    """Fold problem drop_id into keep_id. Returns the id kept (after alias resolution).
+
+    `reason` is a reason code, stored in decision.reason and problem_alias.reason; `note`
+    is free text for decision.note. The kept problem takes the higher steering status of
+    the two (STATUS_RANK), and the decision note says when it came from the dropped one.
+    A pair Edgar already decided in the merge queue (candidate 'rejected' or 'merged')
+    is refused unless `force`; a pair with no candidate row merges as before.
+    """
     keep = resolve(conn, keep_id)
     rows = {r["id"]: r for r in conn.execute(
         "SELECT id, status, centroid_model FROM problem WHERE id IN (?, ?)", (keep, drop_id))}
@@ -524,13 +539,28 @@ def merge(conn: sqlite3.Connection, keep_id: int, drop_id: int, reason: str) -> 
         raise ValueError("cannot merge a problem into itself")
     if rows[drop_id]["status"] == "merged":
         raise ValueError(f"problem {drop_id} is already merged into {resolve(conn, drop_id)}")
-    model = rows[keep]["centroid_model"] or rows[drop_id]["centroid_model"] or DEFAULT_MODEL
     a, b = sorted((keep, drop_id))
+    closed = conn.execute("SELECT status FROM merge_candidate WHERE a_id = ? AND b_id = ?"
+                          " AND status IN ('rejected', 'merged')", (a, b)).fetchone()
+    if closed and not force:
+        raise ValueError(f"the merge queue already {closed['status']} the pair {a}/{b};"
+                         " pass --force to merge anyway")
+    model = rows[keep]["centroid_model"] or rows[drop_id]["centroid_model"] or DEFAULT_MODEL
+    keep_status, drop_status = rows[keep]["status"], rows[drop_id]["status"]
+    carried = STATUS_RANK.get(drop_status, -1) > STATUS_RANK.get(keep_status, -1)
+    parts = [note.strip()] if note and note.strip() else []
+    parts.append(f"merged problem {drop_id} into {keep}")
+    if carried:
+        parts.append(f"status carried from #{drop_id}: {drop_status}")
     with conn:
         conn.execute("UPDATE problem_member SET problem_id = ? WHERE problem_id = ?", (keep, drop_id))
         conn.execute(
             "UPDATE problem SET status = 'merged', merged_into = ?,"
             " updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", (keep, drop_id))
+        if carried:
+            conn.execute("UPDATE problem SET status = ?,"
+                         " updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
+                         (drop_status, keep))
         conn.execute("UPDATE problem_alias SET new_id = ? WHERE new_id = ?", (keep, drop_id))
         conn.execute("INSERT INTO problem_alias (old_id, new_id, reason) VALUES (?, ?, ?)",
                      (drop_id, keep, reason))
@@ -539,7 +569,7 @@ def merge(conn: sqlite3.Connection, keep_id: int, drop_id: int, reason: str) -> 
         conn.execute("DELETE FROM merge_candidate WHERE status = 'open' AND (a_id = ? OR b_id = ?)",
                      (drop_id, drop_id))
         conn.execute("INSERT INTO decision (problem_id, action, reason, note) VALUES (?, 'merge', ?, ?)",
-                     (keep, reason, f"merged problem {drop_id} into {keep}"))
+                     (keep, reason, "; ".join(parts)))
     return keep
 
 
@@ -591,9 +621,9 @@ def cmd_merge(args) -> int:
     conn = db.connect()
     db.migrate(conn)
     try:
-        keep = merge(conn, args.keep, args.drop, args.reason)
+        keep = merge(conn, args.keep, args.drop, args.reason, note=args.note, force=args.force)
     except ValueError as e:
-        print(f"merge refused: {e}")
+        print(f"merge refused: {e}", file=sys.stderr)
         return 1
     print(f"merged problem {args.drop} into {keep}")
     return 0
@@ -609,5 +639,9 @@ def register_cli(sub) -> None:
     g = sub.add_parser("merge", help="merge problem DROP into KEEP")
     g.add_argument("keep", type=int)
     g.add_argument("drop", type=int)
-    g.add_argument("--reason", required=True, help="reason code or short note")
+    g.add_argument("--reason", required=True, metavar="CODE",
+                   help="reason code (decision.reason and problem_alias.reason)")
+    g.add_argument("--note", help="free-text note (decision.note)")
+    g.add_argument("--force", action="store_true",
+                   help="merge even if the merge queue rejected or already merged this pair")
     g.set_defaults(fn=cmd_merge)

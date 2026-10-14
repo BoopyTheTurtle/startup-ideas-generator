@@ -372,3 +372,108 @@ def test_clustering_runs_outside_the_write_transaction(f, monkeypatch, tmp_path)
     monkeypatch.setattr(mapping, "_candidate_groups", spy)
     r = run(f)
     assert seen == [False] and r.new_problems == 1
+
+
+# --- Active prompt state, merge steering (Phase 3 review) -----------------------------
+
+def test_map_publishes_the_active_extract_prompt(f, monkeypatch):
+    from pipeline import db, embed
+    group(f, 0, ["a", "b", "c"])
+    run(f)
+    # The factory's prompt is not today's file: map registers today's and publishes it.
+    pid = f.conn.execute("SELECT id FROM prompt WHERE name = 'extract' AND version = ?",
+                         (embed.current_extract_version(),)).fetchone()[0]
+    assert pid != f.prompt
+    assert db.get_state(f.conn, db.ACTIVE_EXTRACT_PROMPT_ID) == str(pid)
+    monkeypatch.setattr(embed, "current_extract_version", lambda: "v1")
+    run(f)
+    assert db.get_state(f.conn, db.ACTIVE_EXTRACT_PROMPT_ID) == str(f.prompt)
+
+
+def two_problems(f):
+    group(f, 0, ["a", "b", "c"])
+    group(f, 1, ["d", "e", "f"])
+    run(f)
+    return problems(f)
+
+
+def set_status(f, pid, status):
+    with f.conn:
+        f.conn.execute("UPDATE problem SET status = ? WHERE id = ?", (status, pid))
+
+
+def status(f, pid):
+    return f.conn.execute("SELECT status FROM problem WHERE id = ?", (pid,)).fetchone()[0]
+
+
+@pytest.mark.parametrize("keep_status, drop_status, expected, carried", [
+    ("new", "promoted", "promoted", True),
+    ("watching", "new", "watching", False),
+    ("archived", "watching", "watching", True),
+    ("promoted", "watching", "promoted", False),
+    ("new", "archived", "new", False),
+])
+def test_merge_keeps_the_higher_status(f, keep_status, drop_status, expected, carried):
+    keep, drop = two_problems(f)
+    set_status(f, keep, keep_status)
+    set_status(f, drop, drop_status)
+    mapping.merge(f.conn, keep, drop, "duplicate")
+    assert status(f, keep) == expected and status(f, drop) == "merged"
+    note = f.conn.execute("SELECT note FROM decision").fetchone()[0]
+    assert (f"status carried from #{drop}: {drop_status}" in note) == carried
+
+
+def test_merge_stores_reason_code_and_note(f):
+    keep, drop = two_problems(f)
+    mapping.merge(f.conn, keep, drop, "same_problem", note="  both about invoices ")
+    d = f.conn.execute("SELECT reason, note FROM decision").fetchone()
+    assert d["reason"] == "same_problem"
+    assert d["note"] == f"both about invoices; merged problem {drop} into {keep}"
+    assert f.conn.execute("SELECT reason FROM problem_alias WHERE old_id = ?",
+                          (drop,)).fetchone()[0] == "same_problem"
+
+
+@pytest.mark.parametrize("closed", ["rejected", "merged"])
+def test_merge_refuses_a_closed_candidate_unless_forced(f, closed):
+    keep, drop = two_problems(f)
+    with f.conn:
+        f.conn.execute("DELETE FROM merge_candidate")
+        f.conn.execute("INSERT INTO merge_candidate (a_id, b_id, similarity, run_id, status)"
+                       " VALUES (?, ?, 0.92, ?, ?)", (min(keep, drop), max(keep, drop),
+                                                      f.collect_run, closed))
+    for k, d in ((keep, drop), (drop, keep)):  # either argument order
+        with pytest.raises(ValueError, match=closed):
+            mapping.merge(f.conn, k, d, "duplicate")
+    assert status(f, drop) != "merged" and f.conn.execute(
+        "SELECT COUNT(*) FROM decision").fetchone()[0] == 0
+    assert mapping.merge(f.conn, keep, drop, "duplicate", force=True) == keep
+    assert status(f, drop) == "merged"
+    assert f.conn.execute("SELECT status FROM merge_candidate").fetchone()[0] == "merged"
+
+
+def test_merge_with_an_open_candidate_closes_it(f):
+    keep, drop = two_problems(f)
+    with f.conn:
+        f.conn.execute("DELETE FROM merge_candidate")
+        f.conn.execute("INSERT INTO merge_candidate (a_id, b_id, similarity, run_id)"
+                       " VALUES (?, ?, 0.92, ?)", (min(keep, drop), max(keep, drop), f.collect_run))
+    mapping.merge(f.conn, keep, drop, "duplicate")
+    assert f.conn.execute("SELECT status FROM merge_candidate").fetchone()[0] == "merged"
+
+
+def test_merge_cli(f, tmp_path, monkeypatch, capsys):
+    from pipeline.__main__ import main
+    keep, drop = two_problems(f)
+    third = f.problem(axis(9))
+    with f.conn:
+        f.conn.execute("DELETE FROM merge_candidate")
+        f.conn.execute("INSERT INTO merge_candidate (a_id, b_id, similarity, run_id, status)"
+                       " VALUES (?, ?, 0.92, ?, 'rejected')", (keep, third, f.collect_run))
+    monkeypatch.setenv("SIG_DB", str(tmp_path / "t.db"))
+    assert main(["merge", str(keep), str(drop), "--reason", "duplicate", "--note", "same"]) == 0
+    d = f.conn.execute("SELECT reason, note FROM decision").fetchone()
+    assert d["reason"] == "duplicate" and d["note"].startswith("same; ")
+    assert main(["merge", str(keep), str(third), "--reason", "duplicate"]) == 1
+    assert "--force" in capsys.readouterr().err
+    assert main(["merge", str(keep), str(third), "--reason", "duplicate", "--force"]) == 0
+    assert status(f, third) == "merged"

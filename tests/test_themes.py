@@ -242,3 +242,33 @@ def test_list_themes_shows_latest_run_with_top_problem(f):
     by_problem = {r["top_problem"]["title"] if r["top_problem"] else None: r for r in rows}
     assert by_problem["Seeded problem"]["top_problem"]["n"] == 3
     assert all(r["sample"].startswith("problem ") for r in rows)
+
+
+def test_named_themes_record_prompt_and_model_and_carry_them(f):
+    from pipeline import db
+    from pipeline.embed import current_extract_version
+    a = group(f, 0)
+    group(f, 1)
+    unnamed = themes_run(f.conn, embedder=f.embedder, name=False)
+    assert {(r["prompt_id"], r["model"]) for r in theme_rows(f, unnamed.run_id)} == {(None, None)}
+    named = themes_run(f.conn, embedder=f.embedder, runtime=Fake())
+    pid = f.conn.execute("SELECT id FROM prompt WHERE name = 'themes' AND version = ?",
+                         (prompt_version(),)).fetchone()[0]
+    t1 = theme_of(f, named.run_id, a)
+    assert (t1["title_source"], t1["prompt_id"], t1["model"]) == ("curator", pid, themes.MODEL)
+    carried = themes_run(f.conn, embedder=f.embedder, name=False)
+    t2 = theme_of(f, carried.run_id, a)
+    assert (t2["title_source"], t2["prompt_id"], t2["model"]) == ("carried", pid, themes.MODEL)
+    # Themes runs publish the active extract prompt for the app.
+    extract_pid = f.conn.execute("SELECT id FROM prompt WHERE name = 'extract' AND version = ?",
+                                 (current_extract_version(),)).fetchone()[0]
+    assert db.get_state(f.conn, db.ACTIVE_EXTRACT_PROMPT_ID) == str(extract_pid)
+
+
+def test_failed_naming_leaves_no_provenance(f):
+    group(f, 0)
+    group(f, 1)
+    res = themes_run(f.conn, embedder=f.embedder, runtime=Fake(fail=True))
+    assert {(r["title_source"], r["prompt_id"], r["model"])
+            for r in theme_rows(f, res.run_id)} == {("auto", None, None)}
+    assert res.llm_failures == 1

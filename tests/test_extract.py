@@ -306,3 +306,11 @@ def test_item_ids_restrict_candidates(conn):
     fake = Fake(lambda i: {"id": i["id"], "is_pain": False, "problems": []})
     extract(conn, fake, item_ids=[a])
     assert [p["id"] for p in fake.calls[0]] == [a]
+
+
+def test_extract_publishes_the_active_prompt_id(conn):
+    from pipeline.embed import current_extract_version
+    extract(conn, Fake(lambda i: {"id": i["id"], "is_pain": False, "problems": []}))
+    pid = conn.execute("SELECT id FROM prompt WHERE name = 'extract' AND version = ?",
+                       (current_extract_version(),)).fetchone()[0]
+    assert db.get_state(conn, db.ACTIVE_EXTRACT_PROMPT_ID) == str(pid)

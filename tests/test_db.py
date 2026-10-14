@@ -88,3 +88,24 @@ def test_004_widens_assigned_by_and_keeps_rows(tmp_path, monkeypatch):
     assert c.execute("SELECT 1 FROM sqlite_master WHERE type = 'index'"
                      " AND name = 'problem_member_problem'").fetchone()
     assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_006_adds_pipeline_state_and_theme_provenance(conn):
+    assert [r[1] for r in conn.execute("PRAGMA table_info(pipeline_state)")] == [
+        "key", "value", "updated_at"]
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(theme)")]
+    assert cols[-2:] == ["prompt_id", "model"]
+    fks = {(r["from"], r["table"]) for r in conn.execute("PRAGMA foreign_key_list(theme)")}
+    assert ("prompt_id", "prompt") in fks
+
+
+def test_state_upserts(conn):
+    assert db.get_state(conn, "k") is None
+    with conn:
+        db.set_state(conn, "k", "1")
+    first = conn.execute("SELECT updated_at FROM pipeline_state WHERE key = 'k'").fetchone()[0]
+    with conn:
+        db.set_state(conn, "k", 2)
+    assert db.get_state(conn, "k") == "2"
+    assert conn.execute("SELECT COUNT(*) FROM pipeline_state").fetchone()[0] == 1
+    assert conn.execute("SELECT updated_at FROM pipeline_state").fetchone()[0] >= first

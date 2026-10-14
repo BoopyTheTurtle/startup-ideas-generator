@@ -227,6 +227,8 @@ def extract(conn: sqlite3.Connection, runtime: Runtime | None = None, max_items:
     and re-raises.
     """
     prompt_id, version, system = prompt_row(conn)
+    with conn:
+        db.set_state(conn, db.ACTIVE_EXTRACT_PROMPT_ID, str(prompt_id))
     items = _candidates(conn, prompt_id, max_items, sources, reextract, item_ids)
     stats = defaultdict(float)
     with runs.run(conn, "extract", note=f"prompt {version}, {len(items)} items") as run_id:
