@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { LabelForm } from "./label-form";
 import type { LabelItem } from "@/lib/labeling";
 import type { FormSet } from "@/lib/labels";
@@ -6,7 +7,17 @@ import { muted } from "@/components/ui";
 
 // One item to label: source line, title, plain-text body, and the label form. Never shows
 // model output or an earlier label.
-export function ItemView({ item, set }: { item: LabelItem; set: FormSet }) {
+export function ItemView({
+  item,
+  set,
+  submit,
+  hidden,
+}: {
+  item: LabelItem;
+  set?: FormSet;
+  submit?: ComponentProps<typeof LabelForm>["submit"];
+  hidden?: Record<string, string>;
+}) {
   const url = safeUrl(item.url);
   const body = plainText(item.body);
   const meta = [
@@ -39,7 +50,7 @@ export function ItemView({ item, set }: { item: LabelItem; set: FormSet }) {
         {body || <span className={muted}>(no body)</span>}
       </div>
       {/* No model output in either set: labels are what the model is scored against. */}
-      <LabelForm itemId={item.id} set={set} />
+      <LabelForm itemId={item.id} set={set} submit={submit} hidden={hidden} />
     </article>
   );
 }

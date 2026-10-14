@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ItemView } from "./item-view";
+import { PainDefinition } from "@/components/pain-definition";
 import { BackLink, muted } from "@/components/ui";
 import { nextItem, remainingBySource } from "@/lib/labeling";
 import { EVAL_SETS, readLabels, type EvalSet, type LabelRecord } from "@/lib/labels";
@@ -23,27 +24,11 @@ export default function LabelPage({ searchParams }: { searchParams: SearchParams
         </Link>{" "}
         <span className={muted}>(re-label 30 working items blind)</span>
       </p>
-      <Definition />
+      <PainDefinition />
       <Suspense fallback={<p className={`mt-6 text-sm ${muted}`}>Loading an item…</p>}>
         <Labeler searchParams={searchParams} />
       </Suspense>
     </main>
-  );
-}
-
-function Definition() {
-  return (
-    <div className="mt-4 rounded border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-      <p>
-        <span className="font-medium">Pain:</span> a problem many people share that someone
-        could build a business around. Petitions and demands count when a group suffers the
-        problem behind them.
-      </p>
-      <p className="mt-2">
-        <span className="font-medium">Not pain:</span> one person&apos;s bug report or support
-        question; a single product decision users can avoid; news, opinions, praise, jokes, spam.
-      </p>
-    </div>
   );
 }
 

@@ -4,7 +4,13 @@
       "Read(/evals/heldout/**)",
       "Edit(/evals/heldout/**)",
       "Bash(*heldout*)",
-      "PowerShell(*heldout*)"
+      "PowerShell(*heldout*)",
+      "Bash(*audit-draw*)",
+      "Bash(*improvement_card*)",
+      "PowerShell(*improvement_card*)",
+      "Bash(*sqlite3*)",
+      "PowerShell(*sqlite3*)",
+      "PowerShell(*audit-draw*)"
     ]
   }
 }

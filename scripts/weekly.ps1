@@ -33,3 +33,10 @@ Step 'map'     { uv run python -m pipeline map }
 Step 'themes'  { uv run python -m pipeline themes }
 Step 'curate'  { uv run python -m pipeline curate }
 Step 'health'  { uv run python -m pipeline health }
+# Stage 8: metrics, mutation tests, revert and instrument cards, digest. No LLM calls.
+# The auditor (LLM, on Edgar's subscription) proposes cards from the digest. Off until Edgar
+# sets SIG_HEADLESS_AUDIT=1 for the scheduled task; /reassess skips its own run when this one is fresh.
+Step 'reassess' { uv run python -m pipeline reassess }
+if ($env:SIG_HEADLESS_AUDIT -eq '1') {
+    Step 'audit' { claude -p "/reassess" --allowedTools "Agent" "Read" "Grep" "Glob" "Bash(uv run python -m pipeline reassess*)" "Bash(uv run python -m pipeline digest*)" "Bash(uv run python -m pipeline cards*)" "Bash(uv run python -m pipeline card-show*)" "Bash(uv run python -m pipeline card-add*)" "Bash(uv run python -m pipeline status*)" "Bash(uv run python -m pipeline health*)" "Bash(uv run python -m pipeline problems*)" "Bash(uv run python -m pipeline eval-status*)" }
+}
