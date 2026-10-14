@@ -157,7 +157,17 @@ function CardTable({ status, rows }: { status: CardStatus; rows: CardSummary[] }
   const title = STATUS_INFO[status].title;
   return (
     <div className="mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label={`${title} cards table`}>
-      <table className="w-full min-w-[44rem] text-left text-sm">
+      <table className="w-full min-w-[46rem] table-fixed text-left text-sm">
+        <colgroup>
+          <col />
+          <col className="w-24" />
+          <col className="w-20" />
+          <col className="w-14" />
+          <col className="w-16" />
+          <col className="w-16" />
+          <col className="w-24" />
+          <col className="w-48" />
+        </colgroup>
         <caption className="sr-only">
           {title} cards{" "}
           {TERMINAL_STATUSES.includes(status) ? "newest first" : "by rank, highest first"}

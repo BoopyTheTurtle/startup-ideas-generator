@@ -148,6 +148,12 @@ async function Card({ params, searchParams }: { params: Params; searchParams: Se
 function NextStep({ d }: { d: CardDetail }) {
   const { card: c } = d;
   const capFull = d.buildsThisWeek >= MAX_BUILDS_PER_WEEK && c.kind !== "revert";
+  const capNote =
+    c.kind === "revert"
+      ? "Revert cards do not count toward the weekly build cap."
+      : `Builds started in ${d.week}: ${d.buildsThisWeek} of ${MAX_BUILDS_PER_WEEK}.${
+          capFull ? " The cap is reached, so this card waits until next week to build." : ""
+        }`;
   const needsHeldout = c.needs_heldout === 1 && (c.status === "built" || c.status === "ready");
   const mergeReady = c.status === "ready" && c.review_verdict === "approve";
 
@@ -157,8 +163,7 @@ function NextStep({ d }: { d: CardDetail }) {
       body = (
         <>
           <p className="text-sm">
-            Builds started in {d.week}: {d.buildsThisWeek} of {MAX_BUILDS_PER_WEEK}.
-            {capFull && " The cap is reached, so an approved card would wait until next week."}
+            {capNote}
           </p>
           <div className="mt-3">
             <DecisionForm cardId={c.id} title={c.title} />
@@ -170,9 +175,7 @@ function NextStep({ d }: { d: CardDetail }) {
       body = (
         <p className="text-sm">
           Approved {fmtDateTime(c.decided_at)} UTC. Next: {startCmds(c.id)}.{" "}
-          {capFull
-            ? `${d.buildsThisWeek} of ${MAX_BUILDS_PER_WEEK} builds already started in ${d.week}, so the build command refuses until next week.`
-            : `Builds started in ${d.week}: ${d.buildsThisWeek} of ${MAX_BUILDS_PER_WEEK}.`}
+          {capNote}
         </p>
       );
       break;
