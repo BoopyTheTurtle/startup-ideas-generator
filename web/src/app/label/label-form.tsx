@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { submitLabel, type LabelState } from "./actions";
-import type { EvalSet, Label } from "@/lib/labels";
+import type { FormSet, Label } from "@/lib/labels";
 
 const KEYS: Record<string, Label> = { p: "pain", n: "not_pain", s: "unsure" };
 
@@ -24,7 +24,7 @@ const BUTTONS: { label: Label; text: string; key: string; className: string }[] 
 
 const initial: LabelState = { message: "", error: false };
 
-export function LabelForm({ itemId, set }: { itemId: number; set: EvalSet }) {
+export function LabelForm({ itemId, set }: { itemId: number; set: FormSet }) {
   const [state, action, pending] = useActionState(submitLabel, initial);
   const form = useRef<HTMLFormElement>(null);
   const buttons = useRef<Partial<Record<Label, HTMLButtonElement | null>>>({});

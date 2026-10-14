@@ -2,6 +2,7 @@
 // outside everything agents query. pipeline/evals.py reads the same files.
 //   evals/working/labels.jsonl   committed; agents may read it
 //   evals/heldout/labels.jsonl   gitignored; Edgar only
+//   evals/recheck/labels.jsonl   blind second pass over working items (consistency check)
 // A later line for the same raw_item_id overrides an earlier one.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -9,6 +10,16 @@ import { REPO_ROOT } from "./paths";
 
 export const EVAL_SETS = ["working", "heldout"] as const;
 export type EvalSet = (typeof EVAL_SETS)[number];
+
+// The recheck pass re-labels working items with the first answer hidden, to measure how
+// consistently Edgar labels: 20 from review/support sources, 10 from the rest as control.
+export type FormSet = EvalSet | "recheck";
+export const REVIEW_SOURCES = ["wordpress", "firefox_addons"];
+export const RECHECK_TARGET = { review: 20, control: 10 };
+
+export function isFormSet(v: unknown): v is FormSet {
+  return v === "recheck" || isEvalSet(v);
+}
 
 export const LABELS = ["pain", "not_pain", "unsure"] as const;
 export type Label = (typeof LABELS)[number];
@@ -32,11 +43,11 @@ export function isLabel(v: unknown): v is Label {
   return typeof v === "string" && (LABELS as readonly string[]).includes(v);
 }
 
-function labelsFile(set: EvalSet): string {
+function labelsFile(set: FormSet): string {
   return path.join(EVALS_DIR, set, "labels.jsonl");
 }
 
-export function readLabels(set: EvalSet): Map<number, LabelRecord> {
+export function readLabels(set: FormSet): Map<number, LabelRecord> {
   const out = new Map<number, LabelRecord>();
   const file = labelsFile(set);
   // Labels are runtime files, not build inputs.
@@ -53,7 +64,7 @@ export function readLabels(set: EvalSet): Map<number, LabelRecord> {
   return out;
 }
 
-export function appendLabel(set: EvalSet, rec: LabelRecord): void {
+export function appendLabel(set: FormSet, rec: LabelRecord): void {
   const file = labelsFile(set);
   mkdirSync(/*turbopackIgnore: true*/ path.dirname(file), { recursive: true });
   appendFileSync(/*turbopackIgnore: true*/ file, JSON.stringify(rec) + "\n", "utf8");

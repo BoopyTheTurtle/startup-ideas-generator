@@ -166,3 +166,18 @@ def test_eval_status(env, capsys):
     out = capsys.readouterr().out
     assert "working: 3 labeled  (pain 1, not_pain 1, unsure 1); 1 lack an extraction" in out
     assert "heldout: 0 labeled" in out
+
+
+def test_consistency_agreement_and_kappa():
+    from pipeline.evals import consistency
+    rec = lambda label, source="wordpress": {"label": label, "source": source}  # noqa: E731
+    first = {1: rec("pain"), 2: rec("not_pain"), 3: rec("pain"), 4: rec("not_pain"),
+             5: rec("pain", "hn"), 6: rec("unsure")}
+    second = {1: rec("pain"), 2: rec("pain"), 3: rec("pain"), 4: rec("not_pain"),
+              5: rec("not_pain", "hn"), 6: rec("pain")}
+    res = consistency(first, second)
+    assert res["review"]["n"] == 4 and res["review"]["agreement"] == 0.75
+    assert res["control"]["n"] == 1 and res["control"]["agreement"] == 0.0
+    assert res["all"]["n"] == 5  # the unsure item is left out
+    assert round(res["review"]["kappa"], 2) == 0.5
+    assert {f[0] for f in res["flips"]} == {2, 5}

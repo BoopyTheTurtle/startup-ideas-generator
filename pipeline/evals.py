@@ -285,7 +285,70 @@ def cmd_eval_status(args) -> int:
     return 0
 
 
+REVIEW_SOURCES = ("wordpress", "firefox_addons")  # mirrors web/src/lib/labels.ts
+
+
+def kappa(pairs: list[tuple[str, str]]) -> float | None:
+    """Cohen's kappa for two passes of binary labels; None when undefined."""
+    n = len(pairs)
+    if n == 0:
+        return None
+    agree = sum(a == b for a, b in pairs) / n
+    p1 = sum(a == "pain" for a, _ in pairs) / n
+    p2 = sum(b == "pain" for _, b in pairs) / n
+    chance = p1 * p2 + (1 - p1) * (1 - p2)
+    return None if chance == 1 else (agree - chance) / (1 - chance)
+
+
+def consistency(first: dict[int, dict], second: dict[int, dict]) -> dict:
+    """Agreement between the working labels and the blind recheck pass, by source group."""
+    groups: dict[str, list[tuple[str, str]]] = {"review": [], "control": []}
+    flips = []
+    for item_id, rec in second.items():
+        old = first.get(item_id)
+        if not old or "unsure" in (old["label"], rec["label"]):
+            continue
+        group = "review" if rec["source"] in REVIEW_SOURCES else "control"
+        groups[group].append((old["label"], rec["label"]))
+        if old["label"] != rec["label"]:
+            flips.append((item_id, rec["source"], old["label"], rec["label"]))
+    out = {}
+    for name, pairs in [*groups.items(), ("all", groups["review"] + groups["control"])]:
+        n = len(pairs)
+        out[name] = {"n": n, "agreement": sum(a == b for a, b in pairs) / n if n else None,
+                     "kappa": kappa(pairs)}
+    out["flips"] = flips
+    return out
+
+
+def cmd_eval_consistency(args) -> int:
+    conn = db.connect()
+    db.migrate(conn)
+    first = load_labels(labels_path("working"))
+    second = load_labels(EVALS_DIR / "recheck" / "labels.jsonl")
+    res = consistency(first, second)
+    if not res["all"]["n"]:
+        print("No rechecked items yet: use /label/recheck in the app.")
+        return 1
+    fmt = lambda v: "-" if v is None else f"{v:.2f}"  # noqa: E731
+    with runs.run(conn, "eval", note="consistency") as run_id:
+        for name in ("review", "control", "all"):
+            r = res[name]
+            print(f"{name:<8} n {r['n']:>3}  agreement {fmt(r['agreement'])}  kappa {fmt(r['kappa'])}")
+            for metric in ("agreement", "kappa"):
+                if r[metric] is not None:
+                    runs.log_metric(conn, run_id, "methodology", f"label_{metric}",
+                                    round(r[metric], 4), f"recheck:{name}")
+    print("\nchanged labels (raw_item_id, source, first, second):")
+    for flip in res["flips"]:
+        print(f"  {flip[0]:>6}  {flip[1]:<16} {flip[2]:<9} -> {flip[3]}")
+    return 0
+
+
 def register_cli(sub) -> None:
+    sub.add_parser("eval-consistency",
+                   help="agreement between working labels and the blind recheck pass").set_defaults(
+        fn=cmd_eval_consistency)
     p = sub.add_parser("eval", help="score extraction against hand labels (agents: working set only)")
     p.add_argument("--set", choices=SETS, default="working")
     p.add_argument("--prompt-version", help="prompt version hash (default: the current prompt file's)")

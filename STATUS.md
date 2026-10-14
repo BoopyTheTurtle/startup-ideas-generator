@@ -35,14 +35,20 @@ Working set: precision 0.49 -> 0.63, recall 0.77 -> 0.50, accuracy 0.62 -> 0.73;
 petitions 0.86/0.86. Recall fell on wordpress (1/12) and firefox_addons (5/17), where
 Edgar's labels are inconsistent: near-identical bug reports and data-collection
 complaints carry opposite labels. Kept v3 (precision first, matches his definition).
+Edgar's held-out run of v3 (2026-10-14): precision 0.24, recall 0.22, F1 0.23 (n 94)
+against working F1 0.56. Either v3 overfits the working labels, the held-out mix differs,
+or labels are inconsistent; agents can't inspect the held-out set to tell. Next: the
+consistency check.
 
 **Next steps**
 
 1. Edgar runs the held-out check on v3 (his commands: `extract --labeled <set> --reextract
    --max-items 150`, then `eval --set <set>`); compare with working-set F1 0.56.
-2. Label consistency: add a blind re-label mode to /label (re-show ~20 already-labeled
-   reviews/support posts without their old label) and measure Edgar's self-agreement. If
-   low, relabel those sources with a sharper rule, or drop product reviews as pain sources.
+2. Consistency check BUILT: Edgar re-labels 30 working items blind at /label/recheck
+   (20 wordpress/firefox_addons, 10 control); then run `pipeline eval-consistency`
+   (agreement + Cohen's kappa per group, changed labels). If review kappa is low: sharper
+   rule or drop reviews as pain sources; if control kappa is also low, the definition
+   itself needs examples.
 2. Non-English forums: Edgar marks them "unsure"; suggest browser translate on /label, or
    add an English rendering (costs usage).
 3. Phase 3: themes layer (mean-centred e5 topic clusters per run, curator-named), radar,
@@ -75,6 +81,8 @@ complaints carry opposite labels. Kept v3 (precision first, matches his definiti
 ## Log
 
 ### 2026-10-14
+
+- Held-out F1 0.23 vs working 0.56 on v3. Built /label/recheck + `eval-consistency`.
 
 - Extract prompt v3 from Edgar's pain definition; /label shows the same definition.
   Working-set scores above. Found inconsistent labels on reviews/support posts.

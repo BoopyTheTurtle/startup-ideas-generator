@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { LabelForm } from "./label-form";
-import { nextItem, remainingBySource, type LabelItem } from "@/lib/labeling";
+import { ItemView } from "./item-view";
+import { nextItem, remainingBySource } from "@/lib/labeling";
 import { EVAL_SETS, readLabels, type EvalSet, type LabelRecord } from "@/lib/labels";
-import { plainText, safeUrl } from "@/lib/plaintext";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -18,6 +17,12 @@ export default function LabelPage({ searchParams }: { searchParams: SearchParams
         </Link>
       </p>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">Label items</h1>
+      <p className="mt-1 text-sm">
+        <Link href="/label/recheck" className="text-zinc-500 underline">
+          Consistency check
+        </Link>{" "}
+        <span className="text-zinc-500">(re-label 30 working items blind)</span>
+      </p>
       <Definition />
       <Suspense fallback={<p className="mt-6 text-sm text-zinc-500">Loading an item…</p>}>
         <Labeler searchParams={searchParams} />
@@ -81,39 +86,6 @@ async function Labeler({ searchParams }: { searchParams: SearchParams }) {
       )}
       <Counters labels={labels} remaining={remaining} />
     </>
-  );
-}
-
-async function ItemView({ item, set }: { item: LabelItem; set: EvalSet }) {
-  const url = safeUrl(item.url);
-  const body = plainText(item.body);
-  const meta = [
-    item.lang && `language ${item.lang}`,
-    item.country && `country ${item.country}`,
-    item.created_at && `posted ${item.created_at.slice(0, 10)}`,
-  ].filter(Boolean);
-  return (
-    <article className="mt-6 rounded border border-zinc-200 p-4 dark:border-zinc-800">
-      <p className="text-xs text-zinc-500">
-        <span className="font-medium text-zinc-700 dark:text-zinc-300">{item.source}</span>
-        {" · "}item {item.id}
-        {meta.length > 0 && ` · ${meta.join(" · ")}`}
-        {url && (
-          <>
-            {" · "}
-            <a href={url} target="_blank" rel="noopener noreferrer" className="underline">
-              original
-            </a>
-          </>
-        )}
-      </p>
-      {item.title && <h2 className="mt-2 text-lg font-medium">{plainText(item.title)}</h2>}
-      <p className="mt-3 max-h-[28rem] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6">
-        {body || <span className="text-zinc-500">(no body)</span>}
-      </p>
-      {/* No model output in either set: labels are what the model is scored against. */}
-      <LabelForm itemId={item.id} set={set} />
-    </article>
   );
 }
 

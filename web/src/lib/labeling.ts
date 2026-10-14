@@ -60,6 +60,22 @@ export async function remainingBySource(exclude: number[]): Promise<Map<string, 
   return out;
 }
 
+// A random item among `ids` (the recheck pool), with its text intact.
+export async function itemAmong(ids: number[]): Promise<LabelItem | null> {
+  await connection();
+  const conn = open();
+  if (!conn || ids.length === 0) return null;
+  const row = conn
+    .prepare(
+      `SELECT id, source, source_id, url, title, body, lang, country, created_at
+         FROM raw_item
+        WHERE id IN (SELECT value FROM json_each(?)) AND text_discarded_at IS NULL
+        ORDER BY random() LIMIT 1`,
+    )
+    .get(JSON.stringify(ids));
+  return (row as LabelItem | undefined) ?? null;
+}
+
 // Re-read from the database inside the server action: the client names the item, the
 // server supplies its source and id.
 export function labelableItem(id: number): { id: number; source: string; source_id: string } | null {

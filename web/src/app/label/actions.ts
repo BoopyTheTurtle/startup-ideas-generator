@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { appendLabel, isEvalSet, isLabel, readLabels } from "@/lib/labels";
+import { appendLabel, isFormSet, isLabel, readLabels } from "@/lib/labels";
 import { labelableItem } from "@/lib/labeling";
 
 export type LabelState = { message: string; error: boolean };
@@ -14,14 +14,23 @@ export async function submitLabel(_prev: LabelState, formData: FormData): Promis
   const set = formData.get("set");
   const label = formData.get("label");
   const id = Number(formData.get("raw_item_id"));
-  if (!isEvalSet(set) || !isLabel(label) || !Number.isSafeInteger(id) || id <= 0) {
+  if (!isFormSet(set) || !isLabel(label) || !Number.isSafeInteger(id) || id <= 0) {
     return { message: "Rejected: malformed submission.", error: true };
   }
   const item = labelableItem(id);
   if (!item) return { message: `Item ${id} is gone or has no text.`, error: true };
 
-  // One label per item across both sets; a double submit is a no-op.
-  if (readLabels("working").has(id) || readLabels("heldout").has(id)) {
+  if (set === "recheck") {
+    // Only working items can be rechecked, once each.
+    if (!readLabels("working").has(id)) {
+      return { message: `Item ${id} is not in the working set.`, error: true };
+    }
+    if (readLabels("recheck").has(id)) {
+      refresh();
+      return { message: `Item ${id} was already rechecked.`, error: false };
+    }
+  } else if (readLabels("working").has(id) || readLabels("heldout").has(id)) {
+    // One label per item across both sets; a double submit is a no-op.
     refresh();
     return { message: `Item ${id} was already labeled.`, error: false };
   }
