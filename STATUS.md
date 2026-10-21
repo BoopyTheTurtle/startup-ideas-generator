@@ -31,6 +31,16 @@ the weekly run collects but cannot extract, name themes, or curate. Weakness fou
 exit code; it should fail the run and show on the radar/health, and a failed login should
 raise a card (stage 8 backlog).
 
+**Resolved later on 2026-10-21:** Edgar renewed the Claude login (`claude auth login`), PR #7
+merged, and the checkout is back on `dev`. Card 2 merge executed (`card-merge 2`, pushed): 13
+forums approved (TractorByNet, BackYardChickens, Early-Retirement.org added; first collect
+tomorrow 09:00). Whole default-on extraction backlog cleared in four 600-item chunks, about
+20 minutes and $13.50 API-equivalent: 2,892 items extracted, 1,132 active pains, 0 default-on
+items waiting. `map` run 45: 8 problems (was 3), pool 880, 8 merge candidates open; 80 of 91
+candidate clusters still rejected, so card 1 (looser cohesion floor, building) stays relevant.
+Problem 3 (YouTube dislike extension) holds 44 of the members from one source: review sources
+dominate. Not run yet: `themes`, `curate` (small Sonnet cost); Monday's weekly run does both.
+
 **Cards (2026-10-21):** at http://localhost:3000/cards. Card 1 (looser cluster cohesion
 floor) is `building`; card 2 (three more US forums) is `ready`, reviewer approved, waiting for
 Edgar's merge decision. The reviewer's caveat: the card marks the forums `clean` and approved
