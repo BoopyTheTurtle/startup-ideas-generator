@@ -132,3 +132,36 @@ license = "Legal notice forbids electronic reproduction"
 tos_class = "gray"
 retain_text = false       # its notice forbids electronic reproduction: extract, then discard text
 approved = "2026-10-13"   # Edgar: run it if we store derived data only
+
+[[forum]]
+id = "tractorbynet"
+name = "TractorByNet"
+feed = "https://www.tractorbynet.com/forums/forums/-/index.rss"
+lang = "en"
+country = "US"
+segment = "small farms and rural land owners"
+license = "Posts (c) their authors; stock XenForo terms"
+tos_class = "clean"
+approved = "2026-10-18"
+
+[[forum]]
+id = "backyardchickens"
+name = "BackYardChickens"
+feed = "https://www.backyardchickens.com/forums/-/index.rss"
+lang = "en"
+country = "US"
+segment = "backyard poultry keepers"
+license = "Posts (c) their authors; stock XenForo terms"
+tos_class = "clean"
+approved = "2026-10-18"
+
+[[forum]]
+id = "earlyretirement"
+name = "Early-Retirement.org"
+feed = "https://www.early-retirement.org/forums/-/index.rss"
+lang = "en"
+country = "US"
+segment = "retirees and personal finance"
+license = "Posts (c) their authors; stock XenForo terms"
+tos_class = "clean"
+approved = "2026-10-18"
