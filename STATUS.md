@@ -31,11 +31,16 @@ the weekly run collects but cannot extract, name themes, or curate. Weakness fou
 exit code; it should fail the run and show on the radar/health, and a failed login should
 raise a card (stage 8 backlog).
 
-**Cards (2026-10-21):** at http://localhost:3000/cards. Card 1 (looser cluster cohesion
-floor) is `building`; card 2 (three more US forums) is `ready`, reviewer approved, waiting for
-Edgar's merge decision. The reviewer's caveat: the card marks the forums `clean` and approved
-on a chat instruction the repo cannot trace, while the research doc lists them as gray/
-unverified. Edgar should confirm that before merging.
+**Cards (2026-10-21, evening):** at http://localhost:3000/cards. Card 2 (three more US forums,
+marked `clean` on Edgar's chat instruction of 2026-10-18) is merged into `dev` (403f1c3); watch
+`coverage.region_gap` for US over the next weekly cycles. Card 1 (looser cluster cohesion
+floor) was cut back at Edgar's decision: the floor stays at 0.93 and the card ships only the
+two new counters `clusters_rejected_trim` and `clusters_rejected_authors` (trim caused 38 of 40
+rejections). Trial at 0.92 / 0.91 gave 1 / 3 new problems but tripped `duplicate_rate` (a
+Wordfence problem sat at 0.92 cosine to the live Firefox extension problem) and `pool_share`
+stayed at 0.933 / 0.912. The reviewer approved; card 1 is `ready`, branch
+`card/1-trial-a-looser-cluster-cohesion-floor-so` (de0cb19), waiting for Edgar's merge approval
+in the app.
 
 (The 2026-10-14 notes below are still accurate for everything not mentioned here.)
 
