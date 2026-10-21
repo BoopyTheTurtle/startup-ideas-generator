@@ -67,6 +67,18 @@ READ_ONLY = {"status", "health", "problems", "eval-status", "themes-list", "card
 LOCK_TIMEOUT_EXIT = 75  # EX_TEMPFAIL
 
 
+def _sweep_stale_runs() -> None:
+    """Fail run rows that a killed process left at 'running' (we hold the lock)."""
+    conn = db.connect()
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'run'").fetchone():
+            n = runs.sweep_stale(conn)
+            if n:
+                print(f"marked {n} run(s) left 'running' by a killed process as failed", file=sys.stderr)
+    finally:
+        conn.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="pipeline")
     p.add_argument("--lock-wait", type=float, default=60, metavar="MINUTES",
@@ -93,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         return args.fn(args)
     try:
         with single_instance(timeout_s=args.lock_wait * 60):
+            _sweep_stale_runs()
             return args.fn(args)
     except LockTimeout as e:
         print(f"pipeline {args.command}: not run: {e}", file=sys.stderr)

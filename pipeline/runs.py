@@ -42,6 +42,22 @@ def run(conn: sqlite3.Connection, kind: str, note: str | None = None):
         )
 
 
+def sweep_stale(conn: sqlite3.Connection) -> int:
+    """Mark runs left 'running' as failed and return how many.
+
+    Call only while holding the pipeline lock. Every command that creates runs holds that
+    lock, so no other writer can be alive and a 'running' row belongs to a process that was
+    killed (closed console, logoff, power loss) before it could record the outcome.
+    """
+    with conn:
+        return conn.execute(
+            "UPDATE run SET status = 'failed',"
+            " finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),"
+            " note = COALESCE(note || '; ', '') || 'killed before finishing'"
+            " WHERE status = 'running'"
+        ).rowcount
+
+
 def log_metric(conn: sqlite3.Connection, run_id: int, layer: str, name: str,
                value: float, subject: str = "") -> None:
     with conn:
