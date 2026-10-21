@@ -4,6 +4,30 @@ The handoff log. Read this first when picking up work; update it before you stop
 `PLAN.md` holds the phases; this file holds where work stands right now. Newest entry
 on top. Keep "Current state" accurate; append to "Log".
 
+## Current state (2026-10-21)
+
+**Incident, found 2026-10-21:** the scheduled tasks were being killed with exit code
+`3221225786` (0xC000013A, a closed console window or logoff). Forum runs died on 14, 19, and
+21 Oct; the weekly run on 19 Oct never completed; nothing but forums collected between 13 and
+21 Oct, and `reassess` did not run. Fix on `fix/scheduled-task-window` (PR into `dev`): the
+tasks launch through `conhost --headless` (no window to close), the trigger is pinned to local
+time (it was fixed to UTC+3, so 10:00 would have become 09:00 after DST ends on 25 Oct), and
+any writing command now fails run rows left at `running` by a killed process
+(`runs.sweep_stale`, under the pipeline lock). Edgar approved the fix; tasks re-registered
+from the branch on 2026-10-21. After the PR merges: `git checkout dev && git pull`.
+Done by hand the same day: `collect --skip forums` (1,095 new items; 2,101 items still
+unextracted, which spends Edgar's subscription, so his call). Confirm tomorrow that
+`data/logs/forums-2026-10-22.log` ends with `scrub`, and Monday's `weekly-2026-10-26.log`
+reaches `reassess`.
+
+**Cards (2026-10-21):** at http://localhost:3000/cards. Card 1 (looser cluster cohesion
+floor) is `building`; card 2 (three more US forums) is `ready`, reviewer approved, waiting for
+Edgar's merge decision. The reviewer's caveat: the card marks the forums `clean` and approved
+on a chat instruction the repo cannot trace, while the research doc lists them as gray/
+unverified. Edgar should confirm that before merging.
+
+(The 2026-10-14 notes below are still accurate for everything not mentioned here.)
+
 ## Current state (2026-10-14, end of day)
 
 **Phase:** 4 built and under review (reassess-and-improve loop). Phase 3 demo (Edgar's
