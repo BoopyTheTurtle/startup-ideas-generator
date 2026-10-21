@@ -11,9 +11,10 @@ $action = New-ScheduledTaskAction -Execute 'conhost.exe' `
     -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$script`"" `
     -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At 10am
-# New-ScheduledTaskTrigger stamps a UTC offset, which makes the task follow UTC (10:00 would become 09:00
-# once daylight saving ends on 25 October). A boundary without an offset means local time.
-$trigger.StartBoundary = $trigger.StartBoundary -replace '[+-]\d\d:\d\d$', ''
+# New-ScheduledTaskTrigger stores the start time as UTC ('07:00Z'), so the task follows UTC and
+# would run at 9:00 local after daylight saving ends on 25 October. A boundary without an
+# offset means local time.
+$trigger.StartBoundary = [datetime]::Today.AddHours(10).ToString('yyyy-MM-ddTHH:mm:ss')
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 
 Register-ScheduledTask -TaskName 'startup-ideas-generator weekly' `
